@@ -1,4 +1,3 @@
-#include <stdbool.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
@@ -6,10 +5,16 @@
 #include <gtk/gtk.h>
 #include <glib.h>
 #include <glib/gprintf.h>
+#include <dirent.h>
+#include <dlfcn.h>
 #include <ao/ao.h>
-#include <mad.h>
+
+typedef void *plugin_ctx_t;
+#include "plugin.h"
 
 #define APP_NAME		"japlay"
+
+#define PLUGIN_DIR		"/usr/lib/japlay"
 
 #define UNUSED(x)		(void)x
 
@@ -23,14 +28,14 @@ enum {
 static GtkWidget *main_window;
 static GtkWidget *playlist_view;
 static GtkListStore *playlist;
-static gchar *playfilename = NULL;
-static gchar *changefilename = NULL;
+static char *playfilename = NULL;
 static GtkTreeRowReference *playing_rowref = NULL;
 static GMutex *play_mutex;
 static GCond *play_cond;
 static bool stop = true, reset = false;
+static GList *plugins = NULL;
 
-static gchar *set_playing_path(GtkTreePath *path)
+static char *set_playing_path(GtkTreePath *path)
 {
 	GtkTreeIter iter;
 	if (playing_rowref) {
@@ -54,11 +59,11 @@ static gchar *set_playing_path(GtkTreePath *path)
 	GValue value;
 	memset(&value, 0, sizeof(value));
 	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_FILENAME, &value);
-	gchar *filename = g_value_dup_string(&value);
+	char *filename = g_value_dup_string(&value);
 	g_value_unset(&value);
 	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_NAME, &value);
 
-	gchar *buf = g_malloc(strlen(filename) + 32);
+	char *buf = g_malloc(strlen(filename) + 32);
 	strcpy(buf, g_value_get_string(&value));
 	strcat(buf, " - " APP_NAME);
 	gtk_window_set_title(GTK_WINDOW(main_window), buf);
@@ -68,7 +73,7 @@ static gchar *set_playing_path(GtkTreePath *path)
 	return filename;
 }
 
-static gchar *advance_playlist()
+static char *advance_playlist()
 {
 	GtkTreeIter iter;
 	if (!playing_rowref)
@@ -81,139 +86,102 @@ static gchar *advance_playlist()
 	if (!gtk_tree_model_iter_next(GTK_TREE_MODEL(playlist), &iter))
 		return NULL;
 	path = gtk_tree_model_get_path(GTK_TREE_MODEL(playlist), &iter);
-	gchar *filename = set_playing_path(path);
+	char *filename = set_playing_path(path);
 	gtk_tree_path_free(path);
 
 	return filename;
 }
 
-static int scale(mad_fixed_t sample)
+static struct input_plugin *detect_plugin(const char *filename)
 {
-	/* round */
-	sample += (1L << (MAD_F_FRACBITS - 16));
-
-	/* clip */
-	if (sample >= MAD_F_ONE)
-		sample = MAD_F_ONE - 1;
-	else if (sample < -MAD_F_ONE)
-		sample = -MAD_F_ONE;
-
-	/* quantize */
-	return sample >> (MAD_F_FRACBITS + 1 - 16);
+	GList *iter = plugins;
+	while (iter) {
+		struct input_plugin *plugin = iter->data;
+		if (plugin->detect(filename))
+			return plugin;
+		iter = iter->next;
+	}
+	g_printf("no plugin for file %s\n", filename);
+	return NULL;
 }
 
 static gpointer play_thread(gpointer ptr)
 {
 	UNUSED(ptr);
-	static struct mad_stream stream;
-	static struct mad_frame frame;
-	static struct mad_synth synth;
 
-	mad_frame_init(&frame);
-	mad_stream_init(&stream);
-	mad_synth_init(&synth);
-
-	static unsigned char buffer[8192];
-	static int16_t output[8192];
+	static sample_t buffer[8192];
 
 	ao_device *dev = NULL;
-	int fd = -1;
+	struct input_plugin *plugin = NULL;
+	void *ctx = NULL;
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,};
 
 	while (true) {
 		g_mutex_lock(play_mutex);
 		if (stop) {
-			if (reset) {
-				if (fd > 0)
-					close(fd);
-				if (playfilename)
-					g_free(playfilename);
-				mad_stream_init(&stream);
-				playfilename = NULL;
-				fd = -1;
-			}
 			g_cond_wait(play_cond, play_mutex);
-			reset = false;
 			stop = false;
-		}
-
-		if (changefilename) {
-			if (playfilename)
-				g_free(playfilename);
-			playfilename = changefilename;
-			changefilename = NULL;
-			if (fd > 0)
-				close(fd);
-			fd = open(playfilename, O_RDONLY);
 		}
 		g_mutex_unlock(play_mutex);
 
-		if (!playfilename) {
+		if (reset) {
+			reset = false;
+			if (plugin)
+				plugin->close(ctx);
+			plugin = NULL;
+
+			plugin = detect_plugin(playfilename);
+			if (!plugin) {
+				stop = true;
+				continue;
+			}
+			ctx = plugin->open(playfilename);
+			if (!ctx) {
+				plugin = NULL;
+				stop = true;
+				continue;
+			}
+		}
+
+		if (!plugin) {
 			stop = true;
 			continue;
 		}
 
-		size_t len = 0;
-		if (stream.next_frame) {
-			len = stream.bufend - stream.next_frame;
-			if (len)
-				memcpy(buffer, stream.next_frame, len);
-		}
-		len += read(fd, &buffer[len], sizeof(buffer) - len);
-		if (len < sizeof(buffer)) {
+		struct input_format iformat = {.rate = 0,};
+		size_t len = plugin->fillbuf(ctx, buffer,
+			sizeof(buffer) / sizeof(sample_t), &iformat);
+		if (!len) {
 			gdk_threads_enter();
-			changefilename = advance_playlist();
+			reset = true;
+			playfilename = advance_playlist();
 			gdk_threads_leave();
-		}
-
-		mad_stream_buffer(&stream, buffer, len);
-
-		if (mad_header_decode(&frame.header, &stream)) {
-			g_printf("MAD error: %s\n", mad_stream_errorstr(&stream));
 			continue;
 		}
 
-		if (frame.header.samplerate != (unsigned int) format.rate ||
-		    MAD_NCHANNELS(&frame.header) != format.channels || !dev) {
+		if (iformat.rate != (unsigned int) format.rate ||
+		    iformat.channels != (unsigned int) format.channels || !dev) {
 			if (dev)
 				ao_close(dev);
-			g_printf("format change: %d Hz, %d channels\n",
-				frame.header.samplerate, MAD_NCHANNELS(&frame.header));
-			format.rate = frame.header.samplerate;
-			format.channels = MAD_NCHANNELS(&frame.header);
+			g_printf("format change: %u Hz, %u channels\n",
+				iformat.rate, iformat.channels);
+			format.rate = iformat.rate;
+			format.channels = iformat.channels;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
 				g_printf("Unable to open audio device\n");
 				stop = true;
+				continue;
 			}
 		}
 
-		if (mad_frame_decode(&frame, &stream)) {
-			g_printf("MAD error: %s\n", mad_stream_errorstr(&stream));
-			continue;
-		}
-
-		mad_synth_frame(&synth, &frame);
-
-		if (MAD_NCHANNELS(&frame.header) == 2) {
-			size_t i;
-			for (i = 0; i < synth.pcm.length; ++i) {
-				output[i * 2] = scale(synth.pcm.samples[0][i]);
-				output[i * 2 + 1] = scale(synth.pcm.samples[1][i]);
-			}
-		} else if (MAD_NCHANNELS(&frame.header) == 1) {
-			size_t i;
-			for (i = 0; i < synth.pcm.length; ++i)
-				output[i] = scale(synth.pcm.samples[0][i]);
-		}
-		ao_play(dev, (char *)output, synth.pcm.length * 2 *
-			MAD_NCHANNELS(&frame.header));
+		ao_play(dev, (char *)buffer, len * 2);
 	}
 
 	return NULL;
 }
 
-static const gchar *file_ext(const gchar *filename)
+static const char *file_ext(const char *filename)
 {
 	size_t i = strlen(filename);
 	while (i && filename[i - 1] != '/') {
@@ -224,7 +192,7 @@ static const gchar *file_ext(const gchar *filename)
 	return NULL;
 }
 
-static const gchar *file_base(const gchar *filename)
+static const char *file_base(const char *filename)
 {
 	size_t i = strlen(filename);
 	while (i && filename[i - 1] != '/')
@@ -232,7 +200,7 @@ static const gchar *file_base(const gchar *filename)
 	return &filename[i];
 }
 
-static const gchar *build_filename(gchar *buf, const gchar *orig, const gchar *base)
+static const char *build_filename(char *buf, const char *orig, const char *base)
 {
 	if (!memcmp(base, "http:", 5) || base[0] == '/')
 		return base;
@@ -244,12 +212,12 @@ static const gchar *build_filename(gchar *buf, const gchar *orig, const gchar *b
 	return buf;
 }
 
-static void add_playlist(const gchar *filename)
+static void add_playlist(const char *filename)
 {
 	if (!filename[0])
 		return;
 	GtkTreeIter iter;
-	const gchar *name;
+	const char *name;
 	g_printf("adding %s\n", filename);
 	if (!memcmp(filename, "http:", 5))
 		name = filename;
@@ -260,7 +228,7 @@ static void add_playlist(const gchar *filename)
 		COL_NAME, name, COL_COLOR, NULL, -1);
 }
 
-static gchar *trim(gchar *buf)
+static char *trim(char *buf)
 {
 	size_t i = strlen(buf);
 	while (i && isspace(buf[i - 1]))
@@ -272,7 +240,7 @@ static gchar *trim(gchar *buf)
 	return &buf[i];
 }
 
-static bool load_playlist_pls(const gchar *filename)
+static bool load_playlist_pls(const char *filename)
 {
 	FILE *f = fopen(filename, "r");
 	if (!f)
@@ -281,7 +249,7 @@ static bool load_playlist_pls(const gchar *filename)
 	char row[256];
 	while (fgets(row, sizeof(row), f)) {
 		size_t i;
-		gchar *value = NULL;
+		char *value = NULL;
 		for (i = 0; row[i]; ++i) {
 			if (row[i] == '=') {
 				row[i] = 0;
@@ -290,7 +258,7 @@ static bool load_playlist_pls(const gchar *filename)
 			}
 		}
 		if (!memcmp(trim(row), "File", 4) && value) {
-			gchar buf[256];
+			char buf[256];
 			add_playlist(build_filename(buf, filename, trim(value)));
 		}
 	}
@@ -298,16 +266,16 @@ static bool load_playlist_pls(const gchar *filename)
 	return true;
 }
 
-static bool load_playlist_m3u(const gchar *filename)
+static bool load_playlist_m3u(const char *filename)
 {
 	FILE *f = fopen(filename, "r");
 	if (!f)
 		return false;
 
-	gchar row[256];
+	char row[256];
 	while (fgets(row, sizeof(row), f)) {
 		if (row[0] != '#') {
-			gchar buf[256];
+			char buf[256];
 			add_playlist(build_filename(buf, filename, trim(row)));
 		}
 	}
@@ -315,7 +283,7 @@ static bool load_playlist_m3u(const gchar *filename)
 	return true;
 }
 
-static bool save_playlist_m3u(const gchar *filename)
+static bool save_playlist_m3u(const char *filename)
 {
 	FILE *f = fopen(filename, "w");
 	if (!f)
@@ -338,10 +306,10 @@ static bool save_playlist_m3u(const gchar *filename)
 	return true;
 }
 
-static void add_one_file(gchar *filename, gpointer ptr)
+static void add_one_file(char *filename, gpointer ptr)
 {
 	UNUSED(ptr);
-	const gchar *ext = file_ext(filename);
+	const char *ext = file_ext(filename);
 	if (ext) {
 		if (!strcasecmp(ext, "pls"))
 			load_playlist_pls(filename);
@@ -421,7 +389,8 @@ static void play_cb(GtkButton *button, gpointer ptr)
 		if (!gtk_tree_model_get_iter_first(GTK_TREE_MODEL(playlist), &iter))
 			return;
 		GtkTreePath *path = gtk_tree_model_get_path(GTK_TREE_MODEL(playlist), &iter);
-		changefilename = set_playing_path(path);
+		playfilename = set_playing_path(path);
+		reset = true;
 		gtk_tree_path_free(path);
 	}
 	g_cond_signal(play_cond);
@@ -438,7 +407,8 @@ static void next_cb(GtkButton *button, gpointer ptr)
 {
 	UNUSED(button);
 	UNUSED(ptr);
-	changefilename = advance_playlist();
+	playfilename = advance_playlist();
+	reset = true;
 	g_cond_signal(play_cond);
 }
 
@@ -452,10 +422,8 @@ static void stop_cb(GtkButton *button, gpointer ptr)
 {
 	UNUSED(button);
 	UNUSED(ptr);
-	g_mutex_lock(play_mutex);
-	reset = true;
 	stop = true;
-	g_mutex_unlock(play_mutex);
+	reset = true;
 }
 
 static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
@@ -464,7 +432,8 @@ static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
 	UNUSED(view);
 	UNUSED(col);
 	UNUSED(ptr);
-	changefilename = set_playing_path(path);
+	playfilename = set_playing_path(path);
+	reset = true;
 	g_cond_signal(play_cond);
 }
 
@@ -475,12 +444,55 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 	gtk_main_quit();
 }
 
+static bool load_plugin(const char *filename)
+{
+	void *dl = dlopen(filename, RTLD_NOW);
+	if (!dl)
+		return false;
+
+	struct input_plugin *(*get_info)() = dlsym(dl, "get_info");
+	if (!get_info) {
+		dlclose(dl);
+		return false;
+	}
+
+	struct input_plugin *info = get_info();
+
+	g_printf("found plugin %s\n", info->name);
+
+	plugins = g_list_append(plugins, info);
+
+	return true;
+}
+
+static void load_plugins()
+{
+	DIR *dir = opendir(PLUGIN_DIR);
+	if (!dir)
+		return;
+
+	struct dirent *de = readdir(dir);
+	char buf[256];
+	while (de) {
+		if (de->d_name[0] != '.') {
+			strcpy(buf, PLUGIN_DIR "/");
+			strcat(buf, de->d_name);
+			if (!load_plugin(buf))
+				g_printf("Unable to load plugin %s\n", de->d_name);
+		}
+		de = readdir(dir);
+	}
+
+	closedir(dir);
+}
+
 int main(int argc, char **argv)
 {
 	g_thread_init(NULL);
 	gdk_threads_init();
 
 	ao_initialize();
+	load_plugins();
 
 	play_mutex = g_mutex_new();
 	play_cond = g_cond_new();
