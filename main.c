@@ -7,6 +7,8 @@
 #include <ao/ao.h>
 #include <mad.h>
 
+#define APP_NAME		"japlay"
+
 enum {
 	COL_FILENAME,
 	COL_NAME,
@@ -35,6 +37,11 @@ static gchar *set_playing_path(GtkTreePath *path)
 			gtk_list_store_set(playlist, &iter, COL_COLOR, NULL, -1);
 		}
 		gtk_tree_row_reference_free(playing_rowref);
+		playing_rowref = NULL;
+	}
+	if (!path) {
+		gtk_window_set_title(GTK_WINDOW(main_window), APP_NAME);
+		return NULL;
 	}
 	playing_rowref = gtk_tree_row_reference_new(GTK_TREE_MODEL(playlist), path);
 
@@ -43,6 +50,14 @@ static gchar *set_playing_path(GtkTreePath *path)
 	GValue value = {0,};
 	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_FILENAME, &value);
 	gchar *filename = g_value_dup_string(&value);
+	g_value_unset(&value);
+	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_NAME, &value);
+
+	gchar *buf = g_malloc(strlen(filename) + 32);
+	strcpy(buf, g_value_get_string(&value));
+	strcat(buf, " - " APP_NAME);
+	gtk_window_set_title(GTK_WINDOW(main_window), buf);
+	g_free(buf);
 	g_value_unset(&value);
 
 	return filename;
@@ -187,7 +202,7 @@ static gpointer play_thread(gpointer bar)
 	return NULL;
 }
 
-static void add_one_file(gchar *filename, gpointer foo)
+static void add_playlist(gchar *filename)
 {
 	size_t i = strlen(filename);
 	while (i && filename[i - 1] != '/')
@@ -196,6 +211,11 @@ static void add_one_file(gchar *filename, gpointer foo)
 	gtk_list_store_append(playlist, &iter);
 	gtk_list_store_set(playlist, &iter, COL_FILENAME, filename,
 		COL_NAME, &filename[i], COL_COLOR, NULL, -1);
+}
+
+static void add_one_file(gchar *filename, gpointer foo)
+{
+	add_playlist(filename);
 	g_free(filename);
 }
 
@@ -291,6 +311,7 @@ int main(int argc, char **argv)
 	gtk_init(&argc, &argv);
 
 	main_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	gtk_window_set_title(GTK_WINDOW(main_window), APP_NAME);
 
 	playlist = gtk_list_store_new(NUM_COLS, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
 
@@ -351,6 +372,10 @@ int main(int argc, char **argv)
 	gtk_container_add(GTK_CONTAINER(main_window), vbox);
 	gtk_widget_set_size_request(vbox, 250, 150);
 	gtk_widget_show_all(main_window);
+
+	int i;
+	for (i = 1; i < argc; ++i)
+		add_playlist(argv[i]);
 
 	gtk_main();
 	gdk_threads_leave();
