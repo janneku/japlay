@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <ctype.h>
 #include <gtk/gtk.h>
 #include <glib.h>
 #include <glib/gprintf.h>
@@ -77,7 +78,8 @@ static gchar *advance_playlist()
 		return NULL;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
 	gtk_tree_path_free(path);
-	gtk_tree_model_iter_next(GTK_TREE_MODEL(playlist), &iter);
+	if (!gtk_tree_model_iter_next(GTK_TREE_MODEL(playlist), &iter))
+		return NULL;
 	path = gtk_tree_model_get_path(GTK_TREE_MODEL(playlist), &iter);
 	gchar *filename = set_playing_path(path);
 	gtk_tree_path_free(path);
@@ -211,21 +213,144 @@ static gpointer play_thread(gpointer ptr)
 	return NULL;
 }
 
-static void add_playlist(gchar *filename)
+static const gchar *file_ext(const gchar *filename)
+{
+	size_t i = strlen(filename);
+	while (i && filename[i - 1] != '/') {
+		if (filename[i - 1] == '.')
+			return &filename[i];
+		--i;
+	}
+	return NULL;
+}
+
+static const gchar *file_base(const gchar *filename)
 {
 	size_t i = strlen(filename);
 	while (i && filename[i - 1] != '/')
 		--i;
+	return &filename[i];
+}
+
+static const gchar *build_filename(gchar *buf, const gchar *orig, const gchar *base)
+{
+	if (!memcmp(base, "http:", 5) || base[0] == '/')
+		return base;
+	size_t i = strlen(orig);
+	while (i && orig[i - 1] != '/')
+		--i;
+	memcpy(buf, orig, i);
+	strcpy(&buf[i], base);
+	return buf;
+}
+
+static void add_playlist(const gchar *filename)
+{
+	if (!filename[0])
+		return;
 	GtkTreeIter iter;
+	const gchar *name;
+	g_printf("adding %s\n", filename);
+	if (!memcmp(filename, "http:", 5))
+		name = filename;
+	else
+		name = file_base(filename);
 	gtk_list_store_append(playlist, &iter);
 	gtk_list_store_set(playlist, &iter, COL_FILENAME, filename,
-		COL_NAME, &filename[i], COL_COLOR, NULL, -1);
+		COL_NAME, name, COL_COLOR, NULL, -1);
+}
+
+static gchar *trim(gchar *buf)
+{
+	size_t i = strlen(buf);
+	while (i && isspace(buf[i - 1]))
+		--i;
+	buf[i] = 0;
+	i = 0;
+	while (isspace(buf[i]))
+		++i;
+	return &buf[i];
+}
+
+static bool load_playlist_pls(const gchar *filename)
+{
+	FILE *f = fopen(filename, "r");
+	if (!f)
+		return false;
+
+	char row[256];
+	while (fgets(row, sizeof(row), f)) {
+		size_t i;
+		gchar *value = NULL;
+		for (i = 0; row[i]; ++i) {
+			if (row[i] == '=') {
+				row[i] = 0;
+				value = &row[i + 1];
+				break;
+			}
+		}
+		if (!memcmp(trim(row), "File", 4) && value) {
+			gchar buf[256];
+			add_playlist(build_filename(buf, filename, trim(value)));
+		}
+	}
+	fclose(f);
+	return true;
+}
+
+static bool load_playlist_m3u(const gchar *filename)
+{
+	FILE *f = fopen(filename, "r");
+	if (!f)
+		return false;
+
+	gchar row[256];
+	while (fgets(row, sizeof(row), f)) {
+		if (row[0] != '#') {
+			gchar buf[256];
+			add_playlist(build_filename(buf, filename, trim(row)));
+		}
+	}
+	fclose(f);
+	return true;
+}
+
+static bool save_playlist_m3u(const gchar *filename)
+{
+	FILE *f = fopen(filename, "w");
+	if (!f)
+		return false;
+
+	GtkTreeIter iter;
+	if (gtk_tree_model_get_iter_first(GTK_TREE_MODEL(playlist), &iter)) {
+		while (true) {
+			GValue value;
+			memset(&value, 0, sizeof(value));
+			gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_FILENAME, &value);
+			fputs(g_value_get_string(&value), f);
+			fputc('\n', f);
+			g_value_unset(&value);
+			if (!gtk_tree_model_iter_next(GTK_TREE_MODEL(playlist), &iter))
+				break;
+		}
+	}
+	fclose(f);
+	return true;
 }
 
 static void add_one_file(gchar *filename, gpointer ptr)
 {
 	UNUSED(ptr);
-	add_playlist(filename);
+	const gchar *ext = file_ext(filename);
+	if (ext) {
+		if (!strcasecmp(ext, "pls"))
+			load_playlist_pls(filename);
+		else if (!strcasecmp(ext, "m3u"))
+			load_playlist_m3u(filename);
+		else
+			add_playlist(filename);
+	} else
+		add_playlist(filename);
 	g_free(filename);
 }
 
@@ -246,6 +371,13 @@ static void open_cb(GtkButton *button, gpointer ptr)
 		g_slist_free(filelist);
 	}
 	gtk_widget_destroy(dialog);
+}
+
+static void clear_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
+{
+	UNUSED(menuitem);
+	UNUSED(ptr);
+	gtk_list_store_clear(playlist);
 }
 
 static void append_rr_list(GtkTreePath *path, GList **rowref_list)
@@ -284,6 +416,14 @@ static void play_cb(GtkButton *button, gpointer ptr)
 {
 	UNUSED(button);
 	UNUSED(ptr);
+	if (!playfilename) {
+		GtkTreeIter iter;
+		if (!gtk_tree_model_get_iter_first(GTK_TREE_MODEL(playlist), &iter))
+			return;
+		GtkTreePath *path = gtk_tree_model_get_path(GTK_TREE_MODEL(playlist), &iter);
+		changefilename = set_playing_path(path);
+		gtk_tree_path_free(path);
+	}
 	g_cond_signal(play_cond);
 }
 
@@ -328,6 +468,13 @@ static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
 	g_cond_signal(play_cond);
 }
 
+static void destroy_cb(GtkWidget *widget, gpointer ptr)
+{
+	UNUSED(widget);
+	UNUSED(ptr);
+	gtk_main_quit();
+}
+
 int main(int argc, char **argv)
 {
 	g_thread_init(NULL);
@@ -344,6 +491,7 @@ int main(int argc, char **argv)
 
 	main_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_title(GTK_WINDOW(main_window), APP_NAME);
+	g_signal_connect(G_OBJECT(main_window), "destroy", G_CALLBACK(destroy_cb), NULL);
 
 	playlist = gtk_list_store_new(NUM_COLS, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
 
@@ -351,7 +499,11 @@ int main(int argc, char **argv)
 
 	GtkWidget *file_menu = gtk_menu_new();
 
-	GtkWidget *item = gtk_menu_item_new_with_label("Quit");
+	GtkWidget *item = gtk_menu_item_new_with_label("Clear playlist");
+	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(clear_playlist_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
+	item = gtk_menu_item_new_with_label("Quit");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(gtk_main_quit), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
@@ -408,11 +560,19 @@ int main(int argc, char **argv)
 	gtk_widget_set_size_request(vbox, 350, 400);
 	gtk_widget_show_all(main_window);
 
+	char buf[256];
+	strcpy(buf, getenv("HOME"));
+	strcat(buf, "/.japlay/playlist.m3u");
+	load_playlist_m3u(buf);
+
 	int i;
 	for (i = 1; i < argc; ++i)
 		add_playlist(argv[i]);
 
 	gtk_main();
+
+	save_playlist_m3u(buf);
+
 	gdk_threads_leave();
 
 	return 0;

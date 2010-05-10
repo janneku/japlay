@@ -13,3 +13,6 @@ japlay:	$(OBJ)
 
 install: japlay
 	install -m 755 japlay $(DESTDIR)/usr/bin
+
+clean:
+	rm -f $(OBJ)
