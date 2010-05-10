@@ -167,7 +167,7 @@ static gpointer play_thread(gpointer bar)
 		}
 
 		if (frame.header.samplerate != format.rate ||
-		    MAD_NCHANNELS(&frame.header) != format.channels) {
+		    MAD_NCHANNELS(&frame.header) != format.channels || !dev) {
 			if (dev)
 				ao_close(dev);
 			g_printf("format change: %d Hz, %d channels\n",
@@ -175,6 +175,10 @@ static gpointer play_thread(gpointer bar)
 			format.rate = frame.header.samplerate;
 			format.channels = MAD_NCHANNELS(&frame.header);
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
+			if (!dev) {
+				g_printf("Unable to open audio device\n");
+				stop = true;
+			}
 		}
 
 		if (mad_frame_decode(&frame, &stream)) {

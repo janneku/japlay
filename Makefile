@@ -10,3 +10,6 @@ all: japlay
 
 japlay:	$(OBJ)
 	$(CC) $(OBJ) -o japlay $(LDFLAGS)
+
+install: japlay
+	install -m 755 japlay $(DESTDIR)/usr/bin
