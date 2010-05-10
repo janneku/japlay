@@ -1,12 +1,12 @@
-CXX = g++
-CXXFLAGS = -O2 -W -Wall `pkg-config gtk+-2.0 --cflags`
-LDFLAGS = `pkg-config gtk+-2.0 --libs`
+CC = gcc
+CFLAGS = -O2 -W -Wall `pkg-config gtk+-2.0 ao mad --cflags`
+LDFLAGS = `pkg-config gtk+-2.0 ao mad gthread-2.0 --libs`
 OBJ = main.o
 
 all: japlay
 
-%.o:	%.cc
-	$(CXX) $(CXXFLAGS) -c $<
+%.o:	%.c
+	$(CC) $(CFLAGS) -c $<
 
 japlay:	$(OBJ)
-	$(CXX) $(OBJ) -o japlay $(LDFLAGS)
+	$(CC) $(OBJ) -o japlay $(LDFLAGS)
