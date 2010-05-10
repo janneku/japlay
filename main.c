@@ -173,7 +173,7 @@ static gpointer play_thread(gpointer ptr)
 			continue;
 		}
 
-		if (frame.header.samplerate != format.rate ||
+		if (frame.header.samplerate != (unsigned int) format.rate ||
 		    MAD_NCHANNELS(&frame.header) != format.channels || !dev) {
 			if (dev)
 				ao_close(dev);
