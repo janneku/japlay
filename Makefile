@@ -22,7 +22,7 @@ japlay:	$(OBJ)
 
 install:	$(BINARY) $(PLUGINS)
 	install -m 755 japlay $(DESTDIR)/usr/bin
-	mkdir -p 755 $(DESTDIR)/usr/lib/japlay
+	mkdir -p -m 755 $(DESTDIR)/usr/lib/japlay
 	install -m 755 $(PLUGINS) $(DESTDIR)/usr/lib/japlay
 
 clean:
