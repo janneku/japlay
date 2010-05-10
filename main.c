@@ -229,9 +229,9 @@ static void add_one_file(gchar *filename, gpointer ptr)
 	g_free(filename);
 }
 
-static void add_files_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void open_cb(GtkButton *button, gpointer ptr)
 {
-	UNUSED(menuitem);
+	UNUSED(button);
 	UNUSED(ptr);
 	GtkWidget *dialog = gtk_file_chooser_dialog_new("Add Files",
 		GTK_WINDOW(main_window), GTK_FILE_CHOOSER_ACTION_OPEN,
@@ -267,9 +267,9 @@ static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
 	gtk_list_store_remove(playlist, &iter);
 }
 
-static void remove_sel_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void delete_cb(GtkButton *button, gpointer ptr)
 {
-	UNUSED(menuitem);
+	UNUSED(button);
 	UNUSED(ptr);
 	GList *selected = gtk_tree_selection_get_selected_rows(
 		gtk_tree_view_get_selection(GTK_TREE_VIEW(playlist_view)), NULL);
@@ -280,37 +280,37 @@ static void remove_sel_cb(GtkMenuItem *menuitem, gpointer ptr)
 	g_list_free(rr_list);
 }
 
-static void play_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void play_cb(GtkButton *button, gpointer ptr)
 {
-	UNUSED(menuitem);
+	UNUSED(button);
 	UNUSED(ptr);
 	g_cond_signal(play_cond);
 }
 
-static void pause_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void pause_cb(GtkButton *button, gpointer ptr)
 {
-	UNUSED(menuitem);
+	UNUSED(button);
 	UNUSED(ptr);
 	stop = true;
 }
 
-static void next_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void next_cb(GtkButton *button, gpointer ptr)
 {
-	UNUSED(menuitem);
+	UNUSED(button);
 	UNUSED(ptr);
 	changefilename = advance_playlist();
 	g_cond_signal(play_cond);
 }
 
-static void shuffle_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void shuffle_cb(GtkButton *button, gpointer ptr)
 {
-	UNUSED(menuitem);
+	UNUSED(button);
 	UNUSED(ptr);
 }
 
-static void stop_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void stop_cb(GtkButton *button, gpointer ptr)
 {
-	UNUSED(menuitem);
+	UNUSED(button);
 	UNUSED(ptr);
 	g_mutex_lock(play_mutex);
 	reset = true;
@@ -350,41 +350,39 @@ int main(int argc, char **argv)
 	GtkWidget *menubar = gtk_menu_bar_new();
 
 	GtkWidget *file_menu = gtk_menu_new();
-	GtkWidget *item = gtk_menu_item_new_with_label("Add Files");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(add_files_cb), NULL);
-	gtk_menu_append(GTK_MENU(file_menu), item);
 
-	item = gtk_menu_item_new_with_label("Remove Selected");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(remove_sel_cb), NULL);
-	gtk_menu_append(GTK_MENU(file_menu), item);
-
-	item = gtk_menu_item_new_with_label("Play");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(play_cb), NULL);
-	gtk_menu_append(GTK_MENU(file_menu), item);
-
-	item = gtk_menu_item_new_with_label("Pause");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(pause_cb), NULL);
-	gtk_menu_append(GTK_MENU(file_menu), item);
-
-	item = gtk_menu_item_new_with_label("Stop");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(stop_cb), NULL);
-	gtk_menu_append(GTK_MENU(file_menu), item);
-
-	item = gtk_menu_item_new_with_label("Next");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(next_cb), NULL);
-	gtk_menu_append(GTK_MENU(file_menu), item);
-
-	item = gtk_menu_item_new_with_label("Shuffle");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(shuffle_cb), NULL);
-	gtk_menu_append(GTK_MENU(file_menu), item);
-
-	item = gtk_menu_item_new_with_label("Quit");
+	GtkWidget *item = gtk_menu_item_new_with_label("Quit");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(gtk_main_quit), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("File");
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), file_menu);
 	gtk_menu_bar_append(GTK_MENU_BAR(menubar), item);
+
+	GtkWidget *toolbar = gtk_hbox_new(false, 0);
+	GtkWidget *button = gtk_button_new_from_stock(GTK_STOCK_OPEN);
+	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(open_cb), NULL);
+	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+
+	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_PLAY);
+	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(play_cb), NULL);
+	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+
+	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_STOP);
+	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(stop_cb), NULL);
+	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+
+	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_PAUSE);
+	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(pause_cb), NULL);
+	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+
+	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_NEXT);
+	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(next_cb), NULL);
+	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+
+	button = gtk_button_new_from_stock(GTK_STOCK_DELETE);
+	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(delete_cb), NULL);
+	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
 
 	playlist_view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(playlist));
 	gtk_tree_selection_set_mode(
@@ -403,10 +401,11 @@ int main(int argc, char **argv)
 
 	GtkWidget *vbox = gtk_vbox_new(false, 0);
 	gtk_box_pack_start(GTK_BOX(vbox), menubar, false, true, 0);
+	gtk_box_pack_start(GTK_BOX(vbox), toolbar, false, true, 0);
 	gtk_box_pack_start(GTK_BOX(vbox), scrollwin, true, true, 0);
 
 	gtk_container_add(GTK_CONTAINER(main_window), vbox);
-	gtk_widget_set_size_request(vbox, 250, 150);
+	gtk_widget_set_size_request(vbox, 350, 400);
 	gtk_widget_show_all(main_window);
 
 	int i;
