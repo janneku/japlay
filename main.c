@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
 #include <gtk/gtk.h>
@@ -8,6 +9,8 @@
 #include <mad.h>
 
 #define APP_NAME		"japlay"
+
+#define UNUSED(x)		(void)x
 
 enum {
 	COL_FILENAME,
@@ -47,7 +50,8 @@ static gchar *set_playing_path(GtkTreePath *path)
 
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
 	gtk_list_store_set(playlist, &iter, COL_COLOR, "red", -1);
-	GValue value = {0,};
+	GValue value;
+	memset(&value, 0, sizeof(value));
 	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_FILENAME, &value);
 	gchar *filename = g_value_dup_string(&value);
 	g_value_unset(&value);
@@ -96,8 +100,9 @@ static int scale(mad_fixed_t sample)
 	return sample >> (MAD_F_FRACBITS + 1 - 16);
 }
 
-static gpointer play_thread(gpointer bar)
+static gpointer play_thread(gpointer ptr)
 {
+	UNUSED(ptr);
 	static struct mad_stream stream;
 	static struct mad_frame frame;
 	static struct mad_synth synth;
@@ -217,14 +222,17 @@ static void add_playlist(gchar *filename)
 		COL_NAME, &filename[i], COL_COLOR, NULL, -1);
 }
 
-static void add_one_file(gchar *filename, gpointer foo)
+static void add_one_file(gchar *filename, gpointer ptr)
 {
+	UNUSED(ptr);
 	add_playlist(filename);
 	g_free(filename);
 }
 
-static void add_files_cb(GtkMenuItem *menuitem, gpointer foo)
+static void add_files_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
+	UNUSED(menuitem);
+	UNUSED(ptr);
 	GtkWidget *dialog = gtk_file_chooser_dialog_new("Add Files",
 		GTK_WINDOW(main_window), GTK_FILE_CHOOSER_ACTION_OPEN,
 		GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
@@ -248,8 +256,9 @@ static void append_rr_list(GtkTreePath *path, GList **rowref_list)
 	gtk_tree_path_free(path);
 }
 
-static void remove_one_file(GtkTreeRowReference *rowref, gpointer bar)
+static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
 {
+	UNUSED(ptr);
 	GtkTreePath *path = gtk_tree_row_reference_get_path(rowref);
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
@@ -258,8 +267,10 @@ static void remove_one_file(GtkTreeRowReference *rowref, gpointer bar)
 	gtk_list_store_remove(playlist, &iter);
 }
 
-static void remove_sel_cb(GtkMenuItem *menuitem, gpointer foo)
+static void remove_sel_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
+	UNUSED(menuitem);
+	UNUSED(ptr);
 	GList *selected = gtk_tree_selection_get_selected_rows(
 		gtk_tree_view_get_selection(GTK_TREE_VIEW(playlist_view)), NULL);
 	GList *rr_list = NULL;
@@ -269,24 +280,38 @@ static void remove_sel_cb(GtkMenuItem *menuitem, gpointer foo)
 	g_list_free(rr_list);
 }
 
-static void play_cb(GtkMenuItem *menuitem, gpointer foo)
+static void play_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
+	UNUSED(menuitem);
+	UNUSED(ptr);
 	g_cond_signal(play_cond);
 }
 
-static void pause_cb(GtkMenuItem *menuitem, gpointer foo)
+static void pause_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
+	UNUSED(menuitem);
+	UNUSED(ptr);
 	stop = true;
 }
 
-static void next_cb(GtkMenuItem *menuitem, gpointer foo)
+static void next_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
+	UNUSED(menuitem);
+	UNUSED(ptr);
 	changefilename = advance_playlist();
 	g_cond_signal(play_cond);
 }
 
-static void stop_cb(GtkMenuItem *menuitem, gpointer foo)
+static void shuffle_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
+	UNUSED(menuitem);
+	UNUSED(ptr);
+}
+
+static void stop_cb(GtkMenuItem *menuitem, gpointer ptr)
+{
+	UNUSED(menuitem);
+	UNUSED(ptr);
 	g_mutex_lock(play_mutex);
 	reset = true;
 	stop = true;
@@ -294,8 +319,11 @@ static void stop_cb(GtkMenuItem *menuitem, gpointer foo)
 }
 
 static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
-	GtkTreeViewColumn *col, gpointer baz)
+	GtkTreeViewColumn *col, gpointer ptr)
 {
+	UNUSED(view);
+	UNUSED(col);
+	UNUSED(ptr);
 	changefilename = set_playing_path(path);
 	g_cond_signal(play_cond);
 }
@@ -344,6 +372,10 @@ int main(int argc, char **argv)
 
 	item = gtk_menu_item_new_with_label("Next");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(next_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
+	item = gtk_menu_item_new_with_label("Shuffle");
+	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(shuffle_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("Quit");
