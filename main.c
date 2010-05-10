@@ -255,6 +255,12 @@ static void pause_cb(GtkMenuItem *menuitem, gpointer foo)
 	stop = true;
 }
 
+static void next_cb(GtkMenuItem *menuitem, gpointer foo)
+{
+	changefilename = advance_playlist();
+	g_cond_signal(play_cond);
+}
+
 static void stop_cb(GtkMenuItem *menuitem, gpointer foo)
 {
 	g_mutex_lock(play_mutex);
@@ -309,6 +315,10 @@ int main(int argc, char **argv)
 
 	item = gtk_menu_item_new_with_label("Stop");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(stop_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
+	item = gtk_menu_item_new_with_label("Next");
+	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(next_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("Quit");
