@@ -202,7 +202,7 @@ static const char *file_base(const char *filename)
 
 static const char *build_filename(char *buf, const char *orig, const char *base)
 {
-	if (!memcmp(base, "http:", 5) || base[0] == '/')
+	if (!memcmp(base, "http://", 7) || base[0] == '/')
 		return base;
 	size_t i = strlen(orig);
 	while (i && orig[i - 1] != '/')
@@ -219,7 +219,7 @@ static void add_playlist(const char *filename)
 	GtkTreeIter iter;
 	const char *name;
 	g_printf("adding %s\n", filename);
-	if (!memcmp(filename, "http:", 5))
+	if (!memcmp(filename, "http://", 7))
 		name = filename;
 	else
 		name = file_base(filename);

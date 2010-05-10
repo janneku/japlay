@@ -1,6 +1,12 @@
 #include <string.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include <ctype.h>
 #include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <mad.h>
 #include <glib.h>
 #include <glib/gprintf.h>
@@ -29,7 +35,8 @@ static const char *file_ext(const char *filename)
 static bool mad_detect(const char *filename)
 {
 	const char *ext = file_ext(filename);
-	return ext && !strcasecmp(ext, "mp3");
+	return !memcmp(filename, "http://", 7) ||
+		(ext && !strcasecmp(ext, "mp3"));
 }
 
 static struct mad_context *mad_open(const char *filename)
@@ -38,10 +45,53 @@ static struct mad_context *mad_open(const char *filename)
 	if (!ctx)
 		return NULL;
 
-	ctx->fd = open(filename, O_RDONLY);
-	if (ctx->fd < 0) {
-		g_free(ctx);
-		return NULL;
+	if (!memcmp(filename, "http://", 7)) {
+		size_t i = 7;
+		while (filename[i] && filename[i] != '/' && filename[i] != ':' &&
+		       !isspace(filename[i]))
+			++i;
+		char buf[256];
+		memcpy(buf, &filename[7], i - 7);
+		buf[i - 7] = 0;
+
+		int port = 80;
+		if (filename[i] == ':') {
+			port = atoi(&filename[i + 1]);
+			while (isdigit(filename[i]))
+				++i;
+		}
+
+		const char *path = "/";
+		if (filename[i] == '/')
+			path = &filename[i];
+
+		ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
+		if (ctx->fd < 0) {
+			g_free(ctx);
+			return NULL;
+		}
+
+		struct sockaddr_in sin;
+		sin.sin_family = AF_INET;
+		sin.sin_addr.s_addr = inet_addr(buf);
+		sin.sin_port = htons(port);
+
+		if (connect(ctx->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+			g_printf("unable to connect: %s\n", strerror(errno));
+			close(ctx->fd);
+			g_free(ctx);
+			return NULL;
+		}
+
+		sprintf(buf, "GET %s HTTP/1.0\r\n\r\n", path);
+		write(ctx->fd, buf, strlen(buf));
+	} else {
+		ctx->fd = open(filename, O_RDONLY);
+		if (ctx->fd < 0) {
+			g_printf("unable to open file: %s\n", strerror(errno));
+			g_free(ctx);
+			return NULL;
+		}
 	}
 
 	mad_frame_init(&ctx->frame);
@@ -56,6 +106,7 @@ static void mad_close(struct mad_context *ctx)
 	mad_frame_finish(&ctx->frame);
 	mad_stream_finish(&ctx->stream);
 	mad_synth_finish(&ctx->synth);
+	close(ctx->fd);
 	g_free(ctx);
 }
 
@@ -84,18 +135,25 @@ static size_t mad_fillbuf(struct mad_context *ctx, sample_t *buffer,
 			if (len)
 				memcpy(ctx->buffer, ctx->stream.next_frame, len);
 		}
-		len += read(ctx->fd, &ctx->buffer[len], sizeof(ctx->buffer) - len);
-		if (len < sizeof(ctx->buffer))
+		ssize_t ret = read(ctx->fd, &ctx->buffer[len], sizeof(ctx->buffer) - len);
+		if (ret < 0) {
+			g_printf("read error: %s\n", strerror(errno));
 			return 0;
+		}
+		len += ret;
 
 		mad_stream_buffer(&ctx->stream, ctx->buffer, len);
 
 		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
+			if (ctx->stream.error == MAD_ERROR_BUFLEN)
+				return 0;
 			g_printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
 			continue;
 		}
 
 		if (mad_frame_decode(&ctx->frame, &ctx->stream)) {
+			if (ctx->stream.error == MAD_ERROR_BUFLEN)
+				return 0;
 			g_printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
 			continue;
 		}
