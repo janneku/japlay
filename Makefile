@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -O2 -W -Wall `pkg-config gtk+-2.0 ao mad --cflags`
-LDFLAGS = `pkg-config gtk+-2.0 ao mad gthread-2.0 --libs`
+CFLAGS = -O2 -W -Wall `pkg-config gtk+-2.0 ao --cflags`
+LDFLAGS = `pkg-config gtk+-2.0 ao gthread-2.0 --libs`
 PLUGIN_CFLAGS = $(CFLAGS) -fPIC
 PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 
@@ -12,7 +12,7 @@ PLUGINS = in_mad.so
 all: $(BINARY) $(PLUGINS)
 
 in_mad.o:	in_mad.c
-	$(CC) $(PLUGIN_CFLAGS) -c $<
+	$(CC) $(PLUGIN_CFLAGS) `pkg-config mad --cflags` -c $<
 
 %.o:	%.c
 	$(CC) $(CFLAGS) -c $<
@@ -29,4 +29,4 @@ clean:
 	rm -f $(OBJ) $(PLUGIN_OBJS) $(BINARY) $(PLUGINS)
 
 in_mad.so:	in_mad.o
-	$(CC) in_mad.o -o $@ $(PLUGIN_LDFLAGS)
+	$(CC) in_mad.o -o $@ $(PLUGIN_LDFLAGS) `pkg-config mad --libs`
