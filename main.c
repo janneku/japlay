@@ -10,6 +10,7 @@
 enum {
 	COL_FILENAME,
 	COL_NAME,
+	COL_COLOR,
 	NUM_COLS
 };
 
@@ -17,11 +18,55 @@ static GtkWidget *main_window;
 static GtkWidget *playlist_view;
 static GtkListStore *playlist;
 static gchar *playfilename = NULL;
+static gchar *changefilename = NULL;
+static GtkTreeRowReference *playing_rowref = NULL;
 static GMutex *play_mutex;
 static GCond *play_cond;
 static bool stop = true, reset = false;
 
-static int scale (mad_fixed_t sample)
+static gchar *set_playing_path(GtkTreePath *path)
+{
+	GtkTreeIter iter;
+	if (playing_rowref) {
+		GtkTreePath *path = gtk_tree_row_reference_get_path(playing_rowref);
+		if (path) {
+			gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
+			gtk_tree_path_free(path);
+			gtk_list_store_set(playlist, &iter, COL_COLOR, NULL, -1);
+		}
+		gtk_tree_row_reference_free(playing_rowref);
+	}
+	playing_rowref = gtk_tree_row_reference_new(GTK_TREE_MODEL(playlist), path);
+
+	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
+	gtk_list_store_set(playlist, &iter, COL_COLOR, "red", -1);
+	GValue value = {0,};
+	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_FILENAME, &value);
+	gchar *filename = g_value_dup_string(&value);
+	g_value_unset(&value);
+
+	return filename;
+}
+
+static gchar *advance_playlist()
+{
+	GtkTreeIter iter;
+	if (!playing_rowref)
+		return NULL;
+	GtkTreePath *path = gtk_tree_row_reference_get_path(playing_rowref);
+	if (!path)
+		return NULL;
+	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
+	gtk_tree_path_free(path);
+	gtk_tree_model_iter_next(GTK_TREE_MODEL(playlist), &iter);
+	path = gtk_tree_model_get_path(GTK_TREE_MODEL(playlist), &iter);
+	gchar *filename = set_playing_path(path);
+	gtk_tree_path_free(path);
+
+	return filename;
+}
+
+static int scale(mad_fixed_t sample)
 {
 	/* round */
 	sample += (1L << (MAD_F_FRACBITS - 16));
@@ -56,21 +101,35 @@ static gpointer play_thread(gpointer bar)
 	while (true) {
 		g_mutex_lock(play_mutex);
 		if (stop) {
+			if (reset) {
+				if (fd > 0)
+					close(fd);
+				if (playfilename)
+					g_free(playfilename);
+				mad_stream_init(&stream);
+				playfilename = NULL;
+				fd = -1;
+			}
 			g_cond_wait(play_cond, play_mutex);
+			reset = false;
 			stop = false;
 		}
 
-		if (reset) {
-			reset = false;
-			close(fd);
-			fd = -1;
-			mad_stream_init(&stream);
+		if (changefilename) {
+			if (playfilename)
+				g_free(playfilename);
+			playfilename = changefilename;
+			changefilename = NULL;
+			if (fd > 0)
+				close(fd);
+			fd = open(playfilename, O_RDONLY);
 		}
-		gchar *filename = playfilename;
 		g_mutex_unlock(play_mutex);
 
-		if (fd < 0)
-			fd = open(filename, O_RDONLY);
+		if (!playfilename) {
+			stop = true;
+			continue;
+		}
 
 		size_t len = 0;
 		if (stream.next_frame) {
@@ -79,6 +138,11 @@ static gpointer play_thread(gpointer bar)
 				memcpy(buffer, stream.next_frame, len);
 		}
 		len += read(fd, &buffer[len], sizeof(buffer) - len);
+		if (len < sizeof(buffer)) {
+			gdk_threads_enter();
+			changefilename = advance_playlist();
+			gdk_threads_leave();
+		}
 
 		mad_stream_buffer(&stream, buffer, len);
 
@@ -125,27 +189,25 @@ static gpointer play_thread(gpointer bar)
 
 static void add_one_file(gchar *filename, gpointer foo)
 {
-	if (!playfilename)
-		playfilename = g_strdup(filename);
 	size_t i = strlen(filename);
 	while (i && filename[i - 1] != '/')
 		--i;
 	GtkTreeIter iter;
 	gtk_list_store_append(playlist, &iter);
 	gtk_list_store_set(playlist, &iter, COL_FILENAME, filename,
-		COL_NAME, &filename[i], -1);
+		COL_NAME, &filename[i], COL_COLOR, NULL, -1);
 	g_free(filename);
 }
 
 static void add_files_cb(GtkMenuItem *menuitem, gpointer foo)
 {
-	GtkWidget *dialog = gtk_file_chooser_dialog_new("Add File",
-		GTK_WINDOW(main_window),
-		GTK_FILE_CHOOSER_ACTION_OPEN,
+	GtkWidget *dialog = gtk_file_chooser_dialog_new("Add Files",
+		GTK_WINDOW(main_window), GTK_FILE_CHOOSER_ACTION_OPEN,
 		GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
 		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
 		NULL);
 	gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), true);
+
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
 		GSList *filelist = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog));
 		g_slist_foreach(filelist, (GFunc)add_one_file, NULL);
@@ -159,6 +221,7 @@ static void append_rr_list(GtkTreePath *path, GList **rowref_list)
 	GtkTreeRowReference *rowref = gtk_tree_row_reference_new(
 		GTK_TREE_MODEL(playlist), path);
 	*rowref_list = g_list_append(*rowref_list, rowref);
+	gtk_tree_path_free(path);
 }
 
 static void remove_one_file(GtkTreeRowReference *rowref, gpointer bar)
@@ -166,6 +229,8 @@ static void remove_one_file(GtkTreeRowReference *rowref, gpointer bar)
 	GtkTreePath *path = gtk_tree_row_reference_get_path(rowref);
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
+	gtk_tree_path_free(path);
+	gtk_tree_row_reference_free(rowref);
 	gtk_list_store_remove(playlist, &iter);
 }
 
@@ -182,10 +247,7 @@ static void remove_sel_cb(GtkMenuItem *menuitem, gpointer foo)
 
 static void play_cb(GtkMenuItem *menuitem, gpointer foo)
 {
-	g_mutex_lock(play_mutex);
-	if (playfilename)
-		g_cond_signal(play_cond);
-	g_mutex_unlock(play_mutex);
+	g_cond_signal(play_cond);
 }
 
 static void pause_cb(GtkMenuItem *menuitem, gpointer foo)
@@ -204,20 +266,8 @@ static void stop_cb(GtkMenuItem *menuitem, gpointer foo)
 static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
 	GtkTreeViewColumn *col, gpointer baz)
 {
-	GtkTreeIter iter;
-	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist), &iter, path);
-	GValue value = {0,};
-	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist), &iter, COL_FILENAME, &value);
-	gchar *filename = g_value_dup_string(&value);
-	g_value_unset(&value);
-
-	g_mutex_lock(play_mutex);
-	if (playfilename)
-		g_free(playfilename);
-	playfilename = filename;
-	reset = true;
+	changefilename = set_playing_path(path);
 	g_cond_signal(play_cond);
-	g_mutex_unlock(play_mutex);
 }
 
 int main(int argc, char **argv)
@@ -236,7 +286,7 @@ int main(int argc, char **argv)
 
 	main_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 
-	playlist = gtk_list_store_new(NUM_COLS, G_TYPE_STRING, G_TYPE_STRING);
+	playlist = gtk_list_store_new(NUM_COLS, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
 
 	GtkWidget *menubar = gtk_menu_bar_new();
 
@@ -277,8 +327,7 @@ int main(int argc, char **argv)
 
 	GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
 	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(playlist_view),
-		-1, "Name", renderer,
-		"text", COL_NAME, NULL);
+		-1, "Name", renderer, "text", COL_NAME, "foreground", COL_COLOR, NULL);
 
 	GtkWidget *scrollwin = gtk_scrolled_window_new(NULL, NULL);
 	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrollwin),
