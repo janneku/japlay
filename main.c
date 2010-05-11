@@ -158,7 +158,10 @@ static gpointer play_thread(gpointer ptr)
 		if (!len) {
 			gdk_threads_enter();
 			reset = true;
+			g_free(playfilename);
 			playfilename = advance_playlist();
+			if (!playfilename)
+				stop = true;
 			gdk_threads_leave();
 			continue;
 		}
@@ -411,7 +414,10 @@ static void next_cb(GtkButton *button, gpointer ptr)
 {
 	UNUSED(button);
 	UNUSED(ptr);
+	g_free(playfilename);
 	playfilename = advance_playlist();
+	if (!playfilename)
+		stop = true;
 	reset = true;
 	g_cond_signal(play_cond);
 }
@@ -436,6 +442,7 @@ static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
 	UNUSED(view);
 	UNUSED(col);
 	UNUSED(ptr);
+	g_free(playfilename);
 	playfilename = set_playing_path(path);
 	reset = true;
 	g_cond_signal(play_cond);
