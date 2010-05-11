@@ -11,12 +11,10 @@
 #include <glib.h>
 #include <glib/gprintf.h>
 
-typedef struct mikmod_context *plugin_ctx_t;
+typedef MODULE *plugin_ctx_t;
 #include "plugin.h"
 
-struct mikmod_context {
-	MODULE *mf;
-};
+#define UNUSED(x)		(void)x
 
 static const char *file_ext(const char *filename)
 {
@@ -91,12 +89,8 @@ static MDRIVER drv_dummy = {
 	VC_VoiceRealVolume
 };
 
-static struct mikmod_context *mikmod_open(const char *filename)
+static MODULE *mikmod_open(const char *filename)
 {
-	struct mikmod_context *ctx = g_new(struct mikmod_context, 1);
-	if (!ctx)
-		return NULL;
-
 	MikMod_RegisterAllLoaders();
 	MikMod_RegisterDriver(&drv_dummy);
 
@@ -105,27 +99,27 @@ static struct mikmod_context *mikmod_open(const char *filename)
 
 	MikMod_Init("");
 
-	ctx->mf = Player_Load((char *)filename, 128, true);
-	if (!ctx->mf) {
+	MODULE *mf = Player_Load((char *)filename, 128, true);
+	if (!mf) {
 		g_printf("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
-		g_free(ctx);
 		return NULL;
 	}
 
-	Player_Start(ctx->mf);
+	Player_Start(mf);
 
-	return ctx;
+	return mf;
 }
 
-static void mikmod_close(struct mikmod_context *ctx)
+static void mikmod_close(MODULE *mf)
 {
-	Player_Free(ctx->mf);
-	g_free(ctx);
+	Player_Free(mf);
 }
 
-static size_t mikmod_fillbuf(struct mikmod_context *ctx, sample_t *buffer,
+static size_t mikmod_fillbuf(MODULE *mf, sample_t *buffer,
 			  size_t maxlen, struct input_format *format)
 {
+	UNUSED(mf);
+
 	if (!Player_Active())
 		return 0;
 
