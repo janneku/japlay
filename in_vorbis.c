@@ -11,12 +11,8 @@
 #include <glib.h>
 #include <glib/gprintf.h>
 
-typedef struct vorbis_context *plugin_ctx_t;
+typedef OggVorbis_File *plugin_ctx_t;
 #include "plugin.h"
-
-struct vorbis_context {
-	OggVorbis_File vf;
-};
 
 static const char *file_ext(const char *filename)
 {
@@ -34,39 +30,39 @@ static bool vorbis_detect(const char *filename)
 	return ext && !strcasecmp(ext, "ogg");
 }
 
-static struct vorbis_context *vorbis_open(const char *filename)
+static OggVorbis_File *vorbis_open(const char *filename)
 {
-	struct vorbis_context *ctx = g_new(struct vorbis_context, 1);
-	if (!ctx)
+	OggVorbis_File *vf = g_new(OggVorbis_File, 1);
+	if (!vf)
 		return NULL;
 
 	FILE *f = fopen(filename, "rb");
 	if (!f) {
-		g_free(ctx);
+		g_free(vf);
 		return NULL;
 	}
 
-	if (ov_open(f, &ctx->vf, NULL, 0)) {
+	if (ov_open(f, vf, NULL, 0)) {
 		fclose(f);
-		g_free(ctx);
+		g_free(vf);
 		return NULL;
 	}
 
-	return ctx;
+	return vf;
 }
 
-static void vorbis_close(struct vorbis_context *ctx)
+static void vorbis_close(OggVorbis_File *vf)
 {
-	ov_clear(&ctx->vf);
-	g_free(ctx);
+	ov_clear(vf);
+	g_free(vf);
 }
 
-static size_t vorbis_fillbuf(struct vorbis_context *ctx, sample_t *buffer,
+static size_t vorbis_fillbuf(OggVorbis_File *vf, sample_t *buffer,
 			  size_t maxlen, struct input_format *format)
 {
 	while (true) {
 		int bitstream;
-		long n = ov_read(&ctx->vf, (char *)buffer, maxlen * sizeof(sample_t),
+		long n = ov_read(vf, (char *)buffer, maxlen * sizeof(sample_t),
 			0, 2, 1, &bitstream);
 		if (n == OV_HOLE)
 			continue;
@@ -74,7 +70,7 @@ static size_t vorbis_fillbuf(struct vorbis_context *ctx, sample_t *buffer,
 		if (n <= 0)
 			return 0;
 
-		vorbis_info *vi = ov_info(&ctx->vf, -1);
+		vorbis_info *vi = ov_info(vf, -1);
 		format->rate = vi->rate;
 		format->channels = vi->channels;
 
