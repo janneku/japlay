@@ -5,9 +5,9 @@ PLUGIN_CFLAGS = $(CFLAGS) -fPIC
 PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 
 OBJ = main.o
-PLUGIN_OBJS = in_mad.o in_mikmod.o
+PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o
 BINARY = japlay
-PLUGINS = in_mad.so in_mikmod.so
+PLUGINS = in_mad.so in_mikmod.so in_vorbis.so
 
 all: $(BINARY) $(PLUGINS)
 
@@ -16,6 +16,9 @@ in_mad.o:	in_mad.c
 
 in_mikmod.o:	in_mikmod.c
 	$(CC) $(PLUGIN_CFLAGS) `libmikmod-config --cflags` -c $<
+
+in_vorbis.o:	in_vorbis.c
+	$(CC) $(PLUGIN_CFLAGS) `pkg-config vorbisfile --cflags` -c $<
 
 %.o:	%.c
 	$(CC) $(CFLAGS) -c $<
@@ -36,3 +39,6 @@ in_mad.so:	in_mad.o
 
 in_mikmod.so:	in_mikmod.o
 	$(CC) in_mikmod.o -o $@ $(PLUGIN_LDFLAGS) `libmikmod-config --libs`
+
+in_vorbis.so:	in_vorbis.o
+	$(CC) in_vorbis.o -o $@ $(PLUGIN_LDFLAGS) `pkg-config vorbisfile --libs`

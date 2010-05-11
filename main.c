@@ -1,3 +1,7 @@
+/*
+ * japlay - Just Another Player
+ * Copyright Janne Kulmala 2010
+ */
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
