@@ -469,7 +469,7 @@ static bool load_plugin(const char *filename)
 
 	struct input_plugin *info = get_info();
 
-	g_printf("found plugin %s\n", info->name);
+	g_printf("found plugin: %s (%s)\n", file_base(filename), info->name);
 
 	plugins = g_list_append(plugins, info);
 
@@ -504,6 +504,15 @@ int main(int argc, char **argv)
 
 	ao_initialize();
 	load_plugins();
+
+	int i, count;
+	ao_info **drivers = ao_driver_info_list(&count);
+	for (i = 0; i < count; ++i) {
+		if (drivers[i]->type == AO_TYPE_LIVE) {
+			printf("ao driver: %s (%s)\n", drivers[i]->short_name,
+				drivers[i]->name);
+		}
+	}
 
 	play_mutex = g_mutex_new();
 	play_cond = g_cond_new();
@@ -588,7 +597,6 @@ int main(int argc, char **argv)
 	strcat(buf, "/.japlay/playlist.m3u");
 	load_playlist_m3u(buf);
 
-	int i;
 	for (i = 1; i < argc; ++i)
 		add_playlist(argv[i]);
 
