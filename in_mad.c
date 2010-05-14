@@ -2,6 +2,7 @@
  * japlay mikmod MPEG audio decoder plugin
  * Copyright Janne Kulmala 2010
  */
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -13,7 +14,6 @@
 #include <arpa/inet.h>
 #include <mad.h>
 #include <glib.h>
-#include <glib/gprintf.h>
 
 typedef struct mad_context *plugin_ctx_t;
 #include "plugin.h"
@@ -81,7 +81,7 @@ static struct mad_context *mad_open(const char *filename)
 		sin.sin_port = htons(port);
 
 		if (connect(ctx->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-			g_printf("unable to connect: %s\n", strerror(errno));
+			printf("unable to connect: %s\n", strerror(errno));
 			close(ctx->fd);
 			g_free(ctx);
 			return NULL;
@@ -92,7 +92,7 @@ static struct mad_context *mad_open(const char *filename)
 	} else {
 		ctx->fd = open(filename, O_RDONLY);
 		if (ctx->fd < 0) {
-			g_printf("unable to open file: %s\n", strerror(errno));
+			printf("unable to open file: %s\n", strerror(errno));
 			g_free(ctx);
 			return NULL;
 		}
@@ -141,7 +141,7 @@ static size_t mad_fillbuf(struct mad_context *ctx, sample_t *buffer,
 		}
 		ssize_t ret = read(ctx->fd, &ctx->buffer[len], sizeof(ctx->buffer) - len);
 		if (ret < 0) {
-			g_printf("read error: %s\n", strerror(errno));
+			printf("read error: %s\n", strerror(errno));
 			return 0;
 		}
 		len += ret;
@@ -151,14 +151,14 @@ static size_t mad_fillbuf(struct mad_context *ctx, sample_t *buffer,
 		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
 			if (ctx->stream.error == MAD_ERROR_BUFLEN)
 				return 0;
-			g_printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
+			printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
 			continue;
 		}
 
 		if (mad_frame_decode(&ctx->frame, &ctx->stream)) {
 			if (ctx->stream.error == MAD_ERROR_BUFLEN)
 				return 0;
-			g_printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
+			printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
 			continue;
 		}
 
@@ -170,7 +170,7 @@ static size_t mad_fillbuf(struct mad_context *ctx, sample_t *buffer,
 		len = ctx->synth.pcm.length * format->channels;
 
 		if (len > maxlen) {
-			g_printf("Too small buffer!\n");
+			printf("Too small buffer!\n");
 			return 0;
 		}
 

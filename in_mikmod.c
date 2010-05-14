@@ -9,7 +9,6 @@
 #include <ctype.h>
 #include <mikmod.h>
 #include <glib.h>
-#include <glib/gprintf.h>
 
 typedef MODULE *plugin_ctx_t;
 #include "plugin.h"
@@ -101,7 +100,7 @@ static MODULE *mikmod_open(const char *filename)
 
 	MODULE *mf = Player_Load((char *)filename, 128, true);
 	if (!mf) {
-		g_printf("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
+		printf("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
 		return NULL;
 	}
 

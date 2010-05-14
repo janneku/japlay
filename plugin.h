@@ -1,4 +1,5 @@
-#include <stdbool.h>
+#include <stdbool.h> /* bool */
+#include <string.h> /* size_t */
 
 struct input_format {
 	unsigned int rate, channels;

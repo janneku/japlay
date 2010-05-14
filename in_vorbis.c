@@ -9,7 +9,6 @@
 #include <ctype.h>
 #include <vorbis/vorbisfile.h>
 #include <glib.h>
-#include <glib/gprintf.h>
 
 typedef OggVorbis_File *plugin_ctx_t;
 #include "plugin.h"
