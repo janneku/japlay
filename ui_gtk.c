@@ -133,13 +133,17 @@ static void add_one_file(char *filename, gpointer ptr)
 			load_playlist_m3u(filename);
 		else {
 			struct song *song = new_song(filename);
-			add_playlist(song);
-			put_song(song);
+			if (song) {
+				add_playlist(song);
+				put_song(song);
+			}
 		}
 	} else {
 		struct song *song = new_song(filename);
-		add_playlist(song);
-		put_song(song);
+		if (song) {
+			add_playlist(song);
+			put_song(song);
+		}
 	}
 	g_free(filename);
 }
@@ -358,8 +362,10 @@ int main(int argc, char **argv)
 	int i;
 	for (i = 1; i < argc; ++i) {
 		struct song *song = new_song(argv[i]);
-		add_playlist(song);
-		put_song(song);
+		if (song) {
+			add_playlist(song);
+			put_song(song);
+		}
 	}
 
 	gdk_threads_enter();

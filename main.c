@@ -24,6 +24,8 @@ enum {
 	NUM_COLS
 };
 
+#define FILENAME_SIZE		256
+
 static GMutex *playlist_mutex;
 static GMutex *playing_mutex;
 static GMutex *play_mutex;
@@ -34,11 +36,27 @@ static struct list_head playlist;
 static GList *plugins = NULL;
 static struct song *playing = NULL;
 
+static const char *absolute_filename(char *buf, size_t size, const char *filename)
+{
+	if (!memcmp(filename, "http://", 7) || filename[0] == '/')
+		return filename;
+	if (!getcwd(buf, size))
+		return NULL;
+	size_t i = strlen(buf);
+	size_t namelen = strlen(filename);
+	if (i + namelen + 1 >= size)
+		return NULL;
+	buf[i] = '/';
+	memcpy(&buf[i + 1], filename, namelen + 1);
+	return buf;
+}
+
 struct song *new_song(const char *filename)
 {
-	if (!filename[0])
+	char buf[FILENAME_SIZE];
+	filename = absolute_filename(buf, sizeof(buf), filename);
+	if (!filename)
 		return NULL;
-
 	printf("adding %s\n", filename);
 
 	struct song *song = g_new0(struct song, 1);
@@ -223,15 +241,24 @@ static const char *file_base(const char *filename)
 	return &filename[i];
 }
 
-static const char *build_filename(char *buf, const char *orig, const char *base)
+static const char *build_filename(char *buf, size_t size, const char *orig,
+	const char *filename)
 {
-	if (!memcmp(base, "http://", 7) || base[0] == '/')
-		return base;
+	if (!filename[0])
+		return NULL;
+	if (!memcmp(filename, "http://", 7) || filename[0] == '/')
+		return filename;
 	size_t i = strlen(orig);
 	while (i && orig[i - 1] != '/')
 		--i;
+	while (i && orig[i - 1] == '/')
+		--i;
+	size_t namelen = strlen(filename);
+	if (i + namelen + 1 >= size)
+		return NULL;
 	memcpy(buf, orig, i);
-	strcpy(&buf[i], base);
+	buf[i] = '/';
+	memcpy(&buf[i + 1], filename, namelen + 1);
 	return buf;
 }
 
@@ -287,11 +314,16 @@ static char *trim(char *buf)
 
 bool load_playlist_pls(const char *filename)
 {
+	char buf[FILENAME_SIZE];
+	filename = absolute_filename(buf, sizeof(buf), filename);
+	if (!filename)
+		return NULL;
+
 	FILE *f = fopen(filename, "r");
 	if (!f)
 		return false;
 
-	char row[256];
+	char row[512];
 	while (fgets(row, sizeof(row), f)) {
 		size_t i;
 		char *value = NULL;
@@ -303,10 +335,16 @@ bool load_playlist_pls(const char *filename)
 			}
 		}
 		if (!memcmp(trim(row), "File", 4) && value) {
-			char buf[256];
-			struct song *song = new_song(build_filename(buf, filename, trim(value)));
-			add_playlist(song);
-			put_song(song);
+			char buf[FILENAME_SIZE];
+			const char *fname = build_filename(buf, sizeof(buf),
+					    filename, trim(value));
+			if (fname) {
+				struct song *song = new_song(fname);
+				if (song) {
+					add_playlist(song);
+					put_song(song);
+				}
+			}
 		}
 	}
 	fclose(f);
@@ -315,17 +353,28 @@ bool load_playlist_pls(const char *filename)
 
 bool load_playlist_m3u(const char *filename)
 {
+	char buf[FILENAME_SIZE];
+	filename = absolute_filename(buf, sizeof(buf), filename);
+	if (!filename)
+		return NULL;
+
 	FILE *f = fopen(filename, "r");
 	if (!f)
 		return false;
 
-	char row[256];
+	char row[512];
 	while (fgets(row, sizeof(row), f)) {
 		if (row[0] != '#') {
-			char buf[256];
-			struct song *song = new_song(build_filename(buf, filename, trim(row)));
-			add_playlist(song);
-			put_song(song);
+			char buf[FILENAME_SIZE];
+			const char *fname = build_filename(buf, sizeof(buf),
+					    filename, trim(row));
+			if (fname) {
+				struct song *song = new_song(fname);
+				if (song) {
+					add_playlist(song);
+					put_song(song);
+				}
+			}
 		}
 	}
 	fclose(f);
@@ -427,7 +476,7 @@ static void load_plugins()
 		return;
 
 	struct dirent *de = readdir(dir);
-	char buf[256];
+	char buf[FILENAME_SIZE];
 	while (de) {
 		if (de->d_name[0] != '.') {
 			strcpy(buf, PLUGIN_DIR "/");
