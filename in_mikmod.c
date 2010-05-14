@@ -9,11 +9,13 @@
 #include <ctype.h>
 #include <mikmod.h>
 #include <glib.h>
-
-typedef MODULE *plugin_ctx_t;
 #include "plugin.h"
 
 #define UNUSED(x)		(void)x
+
+struct input_plugin_ctx {
+	MODULE *mf;
+};
 
 static const char *file_ext(const char *filename)
 {
@@ -88,7 +90,7 @@ static MDRIVER drv_dummy = {
 	VC_VoiceRealVolume
 };
 
-static MODULE *mikmod_open(const char *filename)
+static bool mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
 {
 	MikMod_RegisterAllLoaders();
 	MikMod_RegisterDriver(&drv_dummy);
@@ -98,26 +100,26 @@ static MODULE *mikmod_open(const char *filename)
 
 	MikMod_Init("");
 
-	MODULE *mf = Player_Load((char *)filename, 128, true);
-	if (!mf) {
+	ctx->mf = Player_Load((char *)filename, 128, true);
+	if (!ctx->mf) {
 		printf("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
-		return NULL;
+		return false;
 	}
 
-	Player_Start(mf);
+	Player_Start(ctx->mf);
 
-	return mf;
+	return true;
 }
 
-static void mikmod_close(MODULE *mf)
+static void mikmod_close(struct input_plugin_ctx *ctx)
 {
-	Player_Free(mf);
+	Player_Free(ctx->mf);
 }
 
-static size_t mikmod_fillbuf(MODULE *mf, sample_t *buffer,
+static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			  size_t maxlen, struct input_format *format)
 {
-	UNUSED(mf);
+	UNUSED(ctx);
 
 	if (!Player_Active())
 		return 0;
@@ -131,6 +133,7 @@ static size_t mikmod_fillbuf(MODULE *mf, sample_t *buffer,
 
 static const struct input_plugin plugin_info = {
 	sizeof(struct input_plugin),
+	sizeof(struct input_plugin_ctx),
 	"MikMod module player",
 	mikmod_detect,
 	mikmod_open,

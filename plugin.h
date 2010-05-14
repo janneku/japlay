@@ -5,11 +5,16 @@ struct input_format {
 	unsigned int rate, channels;
 };
 
+struct input_plugin_ctx;
+
 typedef signed short sample_t;
 
 struct input_plugin {
 	/* Size of this structure, used for versioning */
-	unsigned int size;
+	size_t size;
+
+	/* Size of plugin context */
+	size_t ctx_size;
 
 	/* Name of the plugin */
 	const char *name;
@@ -20,16 +25,16 @@ struct input_plugin {
 	/* Try to open the given file and initialize the plugin. Should
 	   return a pointer to internal decoder context for the file.
 	   Returns NULL in case of a failure. */
-	plugin_ctx_t (*open)(const char *filename);
+	bool (*open)(struct input_plugin_ctx *ctx, const char *filename);
 
 	/* Called when file is closed. Should free memory allocated
 	   for the file context. */
-	void (*close)(plugin_ctx_t ctx);
+	void (*close)(struct input_plugin_ctx *ctx);
 
 	/* Fill given buffer with decoded audio data. Should return the
 	   number of samples written to the buffer, and fill all fields
 	   of the format structure. */
-	size_t (*fillbuf)(plugin_ctx_t ctx, sample_t *buffer, size_t maxlen,
+	size_t (*fillbuf)(struct input_plugin_ctx *ctx, sample_t *buffer, size_t maxlen,
 			  struct input_format *format);
 };
 

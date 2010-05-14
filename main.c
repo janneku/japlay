@@ -148,7 +148,7 @@ static gpointer playback_thread(gpointer ptr)
 
 	ao_device *dev = NULL;
 	struct input_plugin *plugin = NULL;
-	void *ctx = NULL;
+	struct input_plugin_ctx *ctx = NULL;
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,};
 
 	while (true) {
@@ -157,9 +157,11 @@ static gpointer playback_thread(gpointer ptr)
 			reset = false;
 			g_mutex_unlock(playing_mutex);
 
-			if (ctx)
+			if (plugin) {
 				plugin->close(ctx);
-			ctx = NULL;
+				g_free(ctx);
+			}
+			plugin = NULL;
 		}
 		g_mutex_unlock(playing_mutex);
 
@@ -172,14 +174,15 @@ static gpointer playback_thread(gpointer ptr)
 		g_mutex_unlock(play_mutex);
 
 		g_mutex_lock(playing_mutex);
-		if (reset || !ctx) {
+		if (reset || !plugin) {
 			struct song *song = playing;
 			get_song(song);
 			g_mutex_unlock(playing_mutex);
 
-			if (ctx)
+			if (plugin) {
 				plugin->close(ctx);
-			ctx = NULL;
+				g_free(ctx);
+			}
 
 			plugin = detect_plugin(song->filename);
 			if (!plugin) {
@@ -187,12 +190,16 @@ static gpointer playback_thread(gpointer ptr)
 				play = false;
 				continue;
 			}
-			ctx = plugin->open(song->filename);
-			put_song(song);
-			if (!ctx) {
+
+			ctx = g_malloc(plugin->ctx_size);
+			if (!plugin->open(ctx, song->filename)) {
+				put_song(song);
+				g_free(ctx);
+				plugin = NULL;
 				play = false;
 				continue;
 			}
+			put_song(song);
 		}
 		else
 			g_mutex_unlock(playing_mutex);

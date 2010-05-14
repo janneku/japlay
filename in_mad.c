@@ -14,11 +14,9 @@
 #include <arpa/inet.h>
 #include <mad.h>
 #include <glib.h>
-
-typedef struct mad_context *plugin_ctx_t;
 #include "plugin.h"
 
-struct mad_context {
+struct input_plugin_ctx {
 	struct mad_stream stream;
 	struct mad_frame frame;
 	struct mad_synth synth;
@@ -43,12 +41,8 @@ static bool mad_detect(const char *filename)
 		(ext && !strcasecmp(ext, "mp3"));
 }
 
-static struct mad_context *mad_open(const char *filename)
+static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 {
-	struct mad_context *ctx = g_new(struct mad_context, 1);
-	if (!ctx)
-		return NULL;
-
 	if (!memcmp(filename, "http://", 7)) {
 		size_t i = 7;
 		while (filename[i] && filename[i] != '/' && filename[i] != ':' &&
@@ -70,10 +64,8 @@ static struct mad_context *mad_open(const char *filename)
 			path = &filename[i];
 
 		ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
-		if (ctx->fd < 0) {
-			g_free(ctx);
-			return NULL;
-		}
+		if (ctx->fd < 0)
+			return false;
 
 		struct sockaddr_in sin;
 		sin.sin_family = AF_INET;
@@ -83,8 +75,7 @@ static struct mad_context *mad_open(const char *filename)
 		if (connect(ctx->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
 			printf("unable to connect: %s\n", strerror(errno));
 			close(ctx->fd);
-			g_free(ctx);
-			return NULL;
+			return false;
 		}
 
 		sprintf(buf, "GET %s HTTP/1.0\r\n\r\n", path);
@@ -93,8 +84,7 @@ static struct mad_context *mad_open(const char *filename)
 		ctx->fd = open(filename, O_RDONLY);
 		if (ctx->fd < 0) {
 			printf("unable to open file: %s\n", strerror(errno));
-			g_free(ctx);
-			return NULL;
+			return false;
 		}
 	}
 
@@ -102,16 +92,15 @@ static struct mad_context *mad_open(const char *filename)
 	mad_stream_init(&ctx->stream);
 	mad_synth_init(&ctx->synth);
 
-	return ctx;
+	return true;
 }
 
-static void mad_close(struct mad_context *ctx)
+static void mad_close(struct input_plugin_ctx *ctx)
 {
 	mad_frame_finish(&ctx->frame);
 	mad_stream_finish(&ctx->stream);
 	mad_synth_finish(&ctx->synth);
 	close(ctx->fd);
-	g_free(ctx);
 }
 
 static sample_t scale(mad_fixed_t sample)
@@ -129,7 +118,7 @@ static sample_t scale(mad_fixed_t sample)
 	return sample >> (MAD_F_FRACBITS + 1 - 16);
 }
 
-static size_t mad_fillbuf(struct mad_context *ctx, sample_t *buffer,
+static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			  size_t maxlen, struct input_format *format)
 {
 	while (true) {
@@ -191,6 +180,7 @@ static size_t mad_fillbuf(struct mad_context *ctx, sample_t *buffer,
 
 static const struct input_plugin plugin_info = {
 	sizeof(struct input_plugin),
+	sizeof(struct input_plugin_ctx),
 	"libmad MPEG audio decoder",
 	mad_detect,
 	mad_open,

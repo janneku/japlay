@@ -1,7 +1,5 @@
 #include <glib.h>
 #include "list.h"
-
-typedef void *plugin_ctx_t;
 #include "plugin.h"
 
 #define APP_NAME		"japlay"
