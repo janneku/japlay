@@ -18,6 +18,7 @@ enum {
 
 static GtkWidget *main_window;
 static GtkWidget *playlist_view;
+static GtkWidget *power_bar;
 static GtkListStore *playlist_store;
 static GThread *main_thread;
 
@@ -119,6 +120,13 @@ void ui_set_playing(struct song *prev, struct song *song)
 	strcat(buf, " - " APP_NAME);
 	gtk_window_set_title(GTK_WINDOW(main_window), buf);
 	g_free(buf);
+	unlock_ui();
+}
+
+void ui_set_power(int power)
+{
+	lock_ui();
+	gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(power_bar), power / 256.0);
 	unlock_ui();
 }
 
@@ -309,30 +317,31 @@ int main(int argc, char **argv)
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), file_menu);
 	gtk_menu_bar_append(GTK_MENU_BAR(menubar), item);
 
+	const struct button {
+		const char *stockid;
+		void (*cb)(GtkButton *button, gpointer ptr);
+	} buttons[] = {
+		{GTK_STOCK_OPEN, open_cb},
+		{GTK_STOCK_MEDIA_PLAY, play_cb},
+		{GTK_STOCK_MEDIA_STOP, stop_cb},
+		{GTK_STOCK_MEDIA_PAUSE, pause_cb},
+		{GTK_STOCK_MEDIA_NEXT, next_cb},
+		{GTK_STOCK_DELETE, delete_cb},
+		{NULL, NULL}
+	};
+
 	GtkWidget *toolbar = gtk_hbox_new(false, 0);
-	GtkWidget *button = gtk_button_new_from_stock(GTK_STOCK_OPEN);
-	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(open_cb), NULL);
-	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+	int i;
+	for (i = 0; buttons[i].stockid; ++i) {
+		GtkWidget *button = gtk_button_new();
+		GtkWidget *image = gtk_image_new_from_stock(buttons[i].stockid, GTK_ICON_SIZE_SMALL_TOOLBAR);
+		gtk_button_set_image(GTK_BUTTON(button), image);
+		g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(buttons[i].cb), NULL);
+		gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+	}
 
-	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_PLAY);
-	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(play_cb), NULL);
-	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
-
-	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_STOP);
-	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(stop_cb), NULL);
-	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
-
-	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_PAUSE);
-	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(pause_cb), NULL);
-	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
-
-	button = gtk_button_new_from_stock(GTK_STOCK_MEDIA_NEXT);
-	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(next_cb), NULL);
-	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
-
-	button = gtk_button_new_from_stock(GTK_STOCK_DELETE);
-	g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(delete_cb), NULL);
-	gtk_box_pack_start(GTK_BOX(toolbar), button, false, true, 0);
+	power_bar = gtk_progress_bar_new();
+	gtk_box_pack_start(GTK_BOX(toolbar), power_bar, false, true, 0);
 
 	playlist_view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(playlist_store));
 	gtk_tree_selection_set_mode(
@@ -363,7 +372,6 @@ int main(int argc, char **argv)
 	strcat(buf, "/.japlay/playlist_store.m3u");
 	load_playlist_m3u(buf);
 
-	int i;
 	for (i = 1; i < argc; ++i) {
 		struct song *song = new_song(argv[i]);
 		if (song) {

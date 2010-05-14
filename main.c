@@ -150,6 +150,7 @@ static gpointer playback_thread(gpointer ptr)
 	struct input_plugin *plugin = NULL;
 	struct input_plugin_ctx *ctx = NULL;
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,};
+	int power_cnt = 0, power = 0;
 
 	while (true) {
 		g_mutex_lock(playing_mutex);
@@ -227,12 +228,25 @@ static gpointer playback_thread(gpointer ptr)
 				iformat.rate, iformat.channels);
 			format.rate = iformat.rate;
 			format.channels = iformat.channels;
+			power_cnt = 0;
+			power = 0;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
 				printf("Unable to open audio device\n");
 				play = false;
 				continue;
 			}
+		}
+
+		size_t i;
+		for (i = power_cnt & 31; i < len; i += 32)
+			power += abs(buffer[i]) / 256;
+
+		power_cnt += len;
+		if (power_cnt >= format.rate * format.channels / 16) {
+			ui_set_power(power * 64 / power_cnt);
+			power_cnt = 0;
+			power = 0;
 		}
 
 		ao_play(dev, (char *)buffer, len * 2);

@@ -17,6 +17,7 @@ struct song {
 void ui_add_playlist(struct song *song);
 void ui_remove_playlist(struct song *song);
 void ui_set_playing(struct song *prev, struct song *song);
+void ui_set_power(int power);
 
 struct song *new_song(const char *filename);
 void get_song(struct song *song);
