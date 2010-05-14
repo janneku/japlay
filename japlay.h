@@ -31,6 +31,7 @@ struct input_plugin *detect_plugin(const char *filename);
 void add_playlist(struct song *song);
 void remove_playlist(struct song *song);
 void clear_playlist();
+void shuffle_playlist();
 
 bool load_playlist_pls(const char *filename);
 bool load_playlist_m3u(const char *filename);

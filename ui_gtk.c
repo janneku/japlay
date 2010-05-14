@@ -174,6 +174,13 @@ static void clear_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
 	clear_playlist();
 }
 
+static void shuffle_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
+{
+	UNUSED(menuitem);
+	UNUSED(ptr);
+	shuffle_playlist();
+}
+
 static void append_rr_list(GtkTreePath *path, GList **rowref_list)
 {
 	GtkTreeRowReference *rowref = gtk_tree_row_reference_new(
@@ -242,13 +249,6 @@ static void next_cb(GtkButton *button, gpointer ptr)
 	japlay_skip();
 }
 
-static void shuffle_cb(GtkButton *button, gpointer ptr)
-{
-	UNUSED(button);
-	UNUSED(ptr);
-	/* TODO */
-}
-
 static void stop_cb(GtkButton *button, gpointer ptr)
 {
 	UNUSED(button);
@@ -295,6 +295,10 @@ int main(int argc, char **argv)
 
 	GtkWidget *item = gtk_menu_item_new_with_label("Clear playlist");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(clear_playlist_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
+	item = gtk_menu_item_new_with_label("Shuffle playlist");
+	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(shuffle_playlist_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("Quit");

@@ -33,6 +33,7 @@ static GCond *play_cond;
 static bool play = false;
 static bool reset = false;
 static struct list_head playlist;
+static int playlist_len = 0;
 static GList *plugins = NULL;
 static struct song *playing = NULL;
 
@@ -268,24 +269,24 @@ void add_playlist(struct song *song)
 
 	g_mutex_lock(playlist_mutex);
 	list_add_tail(&song->head, &playlist);
-	g_mutex_unlock(playlist_mutex);
-
 	ui_add_playlist(song);
+	playlist_len++;
+	g_mutex_unlock(playlist_mutex);
 }
 
 void remove_playlist(struct song *song)
 {
 	g_mutex_lock(playlist_mutex);
 	list_del(&song->head);
+	playlist_len--;
 	memset(&song->head, 0, sizeof(song->head));
-	g_mutex_unlock(playlist_mutex);
-
 	ui_remove_playlist(song);
+	g_mutex_unlock(playlist_mutex);
 
 	put_song(song);
 }
 
-void clear_playlist(struct song *song)
+void clear_playlist()
 {
 	struct list_head *pos, *next;
 
@@ -297,6 +298,34 @@ void clear_playlist(struct song *song)
 		put_song(song);
 	}
 	list_init(&playlist);
+	playlist_len = 0;
+	g_mutex_unlock(playlist_mutex);
+}
+
+void shuffle_playlist()
+{
+	struct list_head *pos;
+
+	g_mutex_lock(playlist_mutex);
+	struct song **table = g_new(struct song *, playlist_len);
+	int len = 0;
+	list_for_each(pos, &playlist) {
+		struct song *song = list_container(pos, struct song, head);
+		int i = rand() % (len + 1);
+		if (i != len)
+			memmove(&table[i + 1], &table[i], (len - i) * sizeof(table[0]));
+		table[i] = song;
+		ui_remove_playlist(song);
+		len++;
+	}
+	list_init(&playlist);
+	int i;
+	for (i = 0; i < playlist_len; ++i) {
+		struct song *song = table[i];
+		list_add_tail(&song->head, &playlist);
+		ui_add_playlist(song);
+	}
+	g_free(table);
 	g_mutex_unlock(playlist_mutex);
 }
 
