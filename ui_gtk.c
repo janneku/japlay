@@ -22,6 +22,9 @@ static GtkWidget *power_bar;
 static GtkListStore *playlist_store;
 static GThread *main_thread;
 
+#define strcpy_q(d, s)		\
+	memcpy(d, s, strlen(s) + 1)
+
 static void lock_ui()
 {
 	if (g_thread_self() != main_thread)
@@ -114,12 +117,17 @@ void ui_set_playing(struct song *prev, struct song *song)
 
 	set_playlist_color(song, "red");
 
+	static const char app_name[] = " - " APP_NAME;
+
 	const char *name = get_display_name(song);
-	char *buf = g_malloc(strlen(name) + 32);
-	strcpy(buf, name);
-	strcat(buf, " - " APP_NAME);
-	gtk_window_set_title(GTK_WINDOW(main_window), buf);
-	g_free(buf);
+
+	char *buf = malloc(strlen(name) + strlen(app_name) + 1);
+	if (buf) {
+		strcpy_q(buf, name);
+		strcpy_q(&buf[strlen(name)], app_name);
+		gtk_window_set_title(GTK_WINDOW(main_window), buf);
+		free(buf);
+	}
 	unlock_ui();
 }
 
@@ -317,9 +325,9 @@ int main(int argc, char **argv)
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), file_menu);
 	gtk_menu_bar_append(GTK_MENU_BAR(menubar), item);
 
-	const struct button {
+	static const struct button {
 		const char *stockid;
-		void (*cb)(GtkButton *button, gpointer ptr);
+		void (*const cb)(GtkButton *button, gpointer ptr);
 	} buttons[] = {
 		{GTK_STOCK_OPEN, open_cb},
 		{GTK_STOCK_MEDIA_PLAY, play_cb},
@@ -367,10 +375,15 @@ int main(int argc, char **argv)
 	gtk_widget_set_size_request(vbox, 350, 400);
 	gtk_widget_show_all(main_window);
 
-	char buf[256];
-	strcpy(buf, getenv("HOME"));
-	strcat(buf, "/.japlay/playlist_store.m3u");
-	load_playlist_m3u(buf);
+	static const char playlist_name[] = "/.japlay/playlist_store.m3u";
+
+	const char *home = getenv("HOME");
+	char *buf = malloc(strlen(home) + strlen(playlist_name) + 1);
+	if (buf) {
+		strcpy_q(buf, home);
+		strcpy_q(&buf[strlen(home)], playlist_name);
+		load_playlist_m3u(buf);
+	}
 
 	for (i = 1; i < argc; ++i) {
 		struct song *song = new_song(argv[i]);
@@ -384,7 +397,8 @@ int main(int argc, char **argv)
 	gtk_main();
 	gdk_threads_leave();
 
-	save_playlist_m3u(buf);
+	if (buf)
+		save_playlist_m3u(buf);
 
 	return 0;
 }
