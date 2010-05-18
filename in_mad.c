@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <mad.h>
 #include <glib.h>
 #include "plugin.h"
@@ -54,7 +55,8 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 
 		int port = 80;
 		if (filename[i] == ':') {
-			port = atoi(&filename[i + 1]);
+			++i;
+			port = atoi(&filename[i]);
 			while (isdigit(filename[i]))
 				++i;
 		}
@@ -63,13 +65,21 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 		if (filename[i] == '/')
 			path = &filename[i];
 
+		in_addr_t addr = inet_addr(buf);
+		if (addr == (in_addr_t)-1) {
+			struct hostent *hp = gethostbyname(buf);
+			if (!hp)
+				return false;
+			addr = ((struct in_addr *)hp->h_addr_list[0])->s_addr;
+		}
+
 		ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
 		if (ctx->fd < 0)
 			return false;
 
 		struct sockaddr_in sin;
 		sin.sin_family = AF_INET;
-		sin.sin_addr.s_addr = inet_addr(buf);
+		sin.sin_addr.s_addr = addr;
 		sin.sin_port = htons(port);
 
 		if (connect(ctx->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
