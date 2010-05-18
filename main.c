@@ -80,19 +80,19 @@ struct song *new_song(const char *filename)
 		return NULL;
 	}
 	song->filename = fname;
-	song->refcount = 1;
+	atomic_set(&song->refcount, 1);
 
 	return song;
 }
 
 void get_song(struct song *song)
 {
-	g_atomic_int_inc(&song->refcount);
+	atomic_inc(&song->refcount);
 }
 
 void put_song(struct song *song)
 {
-	if (g_atomic_int_dec_and_test(&song->refcount)) {
+	if (atomic_dec_and_test(&song->refcount)) {
 		free(song->filename);
 		g_free(song);
 	}

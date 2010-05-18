@@ -1,6 +1,7 @@
 #include <glib.h>
 #include "list.h"
 #include "plugin.h"
+#include "atomic.h"
 
 #define APP_NAME		"japlay"
 
@@ -8,7 +9,7 @@
 
 struct song {
 	struct list_head head;
-	int refcount;
+	atomic_t refcount;
 	char *filename;
 	void *uidata;
 };
