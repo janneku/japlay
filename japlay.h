@@ -7,18 +7,20 @@
 
 #define UNUSED(x)		(void)x
 
-struct song {
-	struct list_head head;
-	atomic_t refcount;
-	char *filename;
-	void *uidata;
-};
+struct song;
+
+struct song_ui_ctx;
 
 /* User interface hooks */
+extern size_t ui_song_ctx_size;
 void ui_add_playlist(struct song *song);
 void ui_remove_playlist(struct song *song);
 void ui_set_playing(struct song *prev, struct song *song);
 void ui_set_power(int power);
+
+/* Getters: */
+struct song_ui_ctx *get_song_ui_ctx(struct song *song);
+const char *get_song_filename(struct song *song);
 
 struct song *new_song(const char *filename);
 void get_song(struct song *song);

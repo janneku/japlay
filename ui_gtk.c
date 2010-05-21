@@ -16,6 +16,12 @@ enum {
 	NUM_COLS
 };
 
+struct song_ui_ctx {
+	GtkTreeRowReference *rowref;
+};
+
+size_t ui_song_ctx_size = sizeof(struct song_ui_ctx);
+
 static GtkWidget *main_window;
 static GtkWidget *playlist_view;
 static GtkWidget *power_bar;
@@ -58,10 +64,11 @@ static const char *file_base(const char *filename)
 
 static void set_playlist_color(struct song *song, const char *color)
 {
-	GtkTreeRowReference *rowref = song->uidata;
-	if (!rowref)
+	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+
+	if (!ctx->rowref)
 		return;
-	GtkTreePath *path = gtk_tree_row_reference_get_path(rowref);
+	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
 
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
@@ -72,13 +79,17 @@ static void set_playlist_color(struct song *song, const char *color)
 
 static const char *get_display_name(struct song *song)
 {
-	if (!memcmp(song->filename, "http://", 7))
-		return song->filename;
-	return file_base(song->filename);
+	const char *filename = get_song_filename(song);
+
+	if (!memcmp(filename, "http://", 7))
+		return filename;
+	return file_base(filename);
 }
 
 void ui_add_playlist(struct song *song)
 {
+	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+
 	lock_ui();
 	GtkTreeIter iter;
 	gtk_list_store_append(playlist_store, &iter);
@@ -87,17 +98,18 @@ void ui_add_playlist(struct song *song)
 
 	/* store row reference */
 	GtkTreePath *path = gtk_tree_model_get_path(GTK_TREE_MODEL(playlist_store), &iter);
-	song->uidata = gtk_tree_row_reference_new(GTK_TREE_MODEL(playlist_store), path);
+	ctx->rowref = gtk_tree_row_reference_new(GTK_TREE_MODEL(playlist_store), path);
 	gtk_tree_path_free(path);
 	unlock_ui();
 }
 
 void ui_remove_playlist(struct song *song)
 {
+	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+
 	lock_ui();
-	GtkTreeRowReference *rowref = song->uidata;
-	GtkTreePath *path = gtk_tree_row_reference_get_path(rowref);
-	gtk_tree_row_reference_free(rowref);
+	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
+	gtk_tree_row_reference_free(ctx->rowref);
 
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
@@ -106,7 +118,7 @@ void ui_remove_playlist(struct song *song)
 	gtk_list_store_remove(playlist_store, &iter);
 	unlock_ui();
 
-	song->uidata = NULL;
+	ctx->rowref = NULL;
 }
 
 void ui_set_playing(struct song *prev, struct song *song)

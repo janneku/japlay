@@ -20,6 +20,13 @@
 #define strcpy_q(d, s)		\
 	memcpy(d, s, strlen(s) + 1)
 
+struct song {
+	struct list_head head;
+	atomic_t refcount;
+	char *filename;
+	struct song_ui_ctx *ui_ctx;
+};
+
 static GMutex *playlist_mutex;
 static GMutex *playing_mutex;
 static GMutex *play_mutex;
@@ -67,6 +74,16 @@ static char *absolute_path(const char *filename)
 	return cwd;
 }
 
+struct song_ui_ctx *get_song_ui_ctx(struct song *song)
+{
+	return song->ui_ctx;
+}
+
+const char *get_song_filename(struct song *song)
+{
+	return song->filename;
+}
+
 struct song *new_song(const char *filename)
 {
 	char *fname = absolute_path(filename);
@@ -81,6 +98,7 @@ struct song *new_song(const char *filename)
 	}
 	song->filename = fname;
 	atomic_set(&song->refcount, 1);
+	song->ui_ctx = g_malloc(ui_song_ctx_size);
 
 	return song;
 }
@@ -94,6 +112,7 @@ void put_song(struct song *song)
 {
 	if (atomic_dec_and_test(&song->refcount)) {
 		free(song->filename);
+		g_free(song->ui_ctx);
 		g_free(song);
 	}
 }
