@@ -4,7 +4,7 @@ LDFLAGS = `pkg-config ao glib-2.0 gthread-2.0 --libs`
 PLUGIN_CFLAGS = $(CFLAGS) -fPIC
 PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 
-OBJ = main.o utils.o playlist.o
+OBJ = main.o utils.o playlist.o iowatch.o
 PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o
 GTK_BINARY = japlay
 PLUGINS = in_mad.so in_mikmod.so in_vorbis.so

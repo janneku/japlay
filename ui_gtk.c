@@ -5,7 +5,10 @@
 #include "ui.h"
 #include "japlay.h"
 #include "playlist.h"
+#include "utils.h"
+#include "iowatch.h"
 #include <gtk/gtk.h>
+#include <gdk/gdkx.h>
 #include <stdlib.h>
 
 #define UNUSED(x)		(void)x
@@ -28,6 +31,7 @@ static GtkWidget *playlist_view;
 static GtkWidget *power_bar;
 static GtkListStore *playlist_store;
 static GThread *main_thread;
+static bool quit = false;
 
 #define strcpy_q(d, s)		\
 	memcpy(d, s, strlen(s) + 1)
@@ -53,14 +57,6 @@ static const char *file_ext(const char *filename)
 		--i;
 	}
 	return NULL;
-}
-
-static const char *file_base(const char *filename)
-{
-	size_t i = strlen(filename);
-	while (i && filename[i - 1] != '/')
-		--i;
-	return &filename[i];
 }
 
 static void set_playlist_color(struct song *song, const char *color)
@@ -298,7 +294,12 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 {
 	UNUSED(widget);
 	UNUSED(ptr);
-	gtk_main_quit();
+	quit = true;
+}
+
+static void x11_io_watch_cb(struct iowatch *watch)
+{
+	UNUSED(watch);
 }
 
 int main(int argc, char **argv)
@@ -406,8 +407,21 @@ int main(int argc, char **argv)
 		}
 	}
 
+	new_io_watch(ConnectionNumber(GDK_DISPLAY()), x11_io_watch_cb, NULL);
+
 	gdk_threads_enter();
-	gtk_main();
+
+	while (!quit) {
+		/* process events before going to sleep */
+		while (gtk_events_pending())
+			gtk_main_iteration();
+
+		if (quit)
+			break;
+
+		iowatch_select();
+	}
+
 	gdk_threads_leave();
 
 	if (buf)

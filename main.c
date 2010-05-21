@@ -373,6 +373,7 @@ void japlay_init()
 	}
 
 	init_playlist();
+	init_iowatch();
 
 	playing_mutex = g_mutex_new();
 
