@@ -2,12 +2,13 @@
  * japlay GTK user interface
  * Copyright Janne Kulmala 2010
  */
+#include "ui.h"
 #include "japlay.h"
-#include <stdlib.h>
+#include "playlist.h"
 #include <gtk/gtk.h>
-#include <pthread.h>
+#include <stdlib.h>
 
-#define PLUGIN_DIR		"/usr/lib/japlay"
+#define UNUSED(x)		(void)x
 
 enum {
 	COL_ENTRY,
