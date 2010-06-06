@@ -3,22 +3,30 @@
  * Copyright Janne Kulmala 2010
  */
 #include "japlay.h"
+#include "common.h"
 #include "utils.h"
 #include "playlist.h"
 #include "plugin.h"
 #include "ui.h"
+#include "iowatch.h"
+#include "unixsocket.h"
 #include <glib.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <dlfcn.h>
 #include <ao/ao.h>
+#include <sys/un.h>
+#include <sys/socket.h>
 
 #define PLUGIN_DIR		"/usr/lib/japlay"
 
-#define UNUSED(x)		(void)x
+#define SOCKET_NAME		"/tmp/japlay"
 
 #define strcpy_q(d, s)		\
 	memcpy(d, s, strlen(s) + 1)
+
+int debug = 0;
 
 static GMutex *playing_mutex;
 static GMutex *play_mutex;
@@ -28,7 +36,7 @@ static bool reset = false;
 static GList *plugins = NULL;
 static struct song *playing = NULL;
 
-struct song *get_playing()
+struct song *get_playing(void)
 {
 	g_mutex_lock(playing_mutex);
 	struct song *song = playing;
@@ -47,7 +55,7 @@ struct input_plugin *detect_plugin(const char *filename)
 			return plugin;
 		iter = iter->next;
 	}
-	printf("no plugin for file %s\n", filename);
+	warning("no plugin for file %s\n", filename);
 	return NULL;
 }
 
@@ -150,7 +158,7 @@ static gpointer playback_thread(gpointer ptr)
 		    iformat.channels != (unsigned int) format.channels || !dev) {
 			if (dev)
 				ao_close(dev);
-			printf("format change: %u Hz, %u channels\n",
+			info("format change: %u Hz, %u channels\n",
 				iformat.rate, iformat.channels);
 			format.rate = iformat.rate;
 			format.channels = iformat.channels;
@@ -158,7 +166,7 @@ static gpointer playback_thread(gpointer ptr)
 			power = 0;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
-				printf("Unable to open audio device\n");
+				warning("Unable to open audio device\n");
 				play = false;
 				continue;
 			}
@@ -193,11 +201,20 @@ static char *trim(char *buf)
 	return &buf[i];
 }
 
+void add_file_playlist(const char *filename)
+{
+	struct song *song = new_song(filename);
+	if (song) {
+		add_playlist(song);
+		put_song(song);
+	}
+}
+
 bool load_playlist_pls(const char *filename)
 {
 	char *playlist_name = absolute_path(filename);
 	if (!playlist_name)
-		return NULL;
+		return false;
 
 	FILE *f = fopen(playlist_name, "r");
 	if (!f) {
@@ -218,14 +235,8 @@ bool load_playlist_pls(const char *filename)
 		}
 		if (!memcmp(trim(row), "File", 4) && value) {
 			char *fname = build_filename(playlist_name, trim(value));
-			if (fname) {
-				struct song *song = new_song(fname);
-				if (song) {
-					add_playlist(song);
-					put_song(song);
-				}
-				free(fname);
-			}
+			if (fname)
+				add_file_playlist(fname);
 		}
 	}
 	free(playlist_name);
@@ -237,7 +248,7 @@ bool load_playlist_m3u(const char *filename)
 {
 	char *playlist_name = absolute_path(filename);
 	if (!playlist_name)
-		return NULL;
+		return false;
 
 	FILE *f = fopen(playlist_name, "r");
 	if (!f) {
@@ -249,14 +260,8 @@ bool load_playlist_m3u(const char *filename)
 	while (fgets(row, sizeof(row), f)) {
 		if (row[0] != '#') {
 			char *fname = build_filename(playlist_name, trim(row));
-			if (fname) {
-				struct song *song = new_song(fname);
-				if (song) {
-					add_playlist(song);
-					put_song(song);
-				}
-				free(fname);
-			}
+			if (fname)
+				add_file_playlist(fname);
 		}
 	}
 	free(playlist_name);
@@ -264,7 +269,7 @@ bool load_playlist_m3u(const char *filename)
 	return true;
 }
 
-static void kick_playback()
+static void kick_playback(void)
 {
 	g_mutex_lock(play_mutex);
 	play = true;
@@ -279,7 +284,7 @@ void play_playlist(struct song *song)
 	kick_playback();
 }
 
-void japlay_play()
+void japlay_play(void)
 {
 	if (!playing) {
 		struct song *song = get_playlist_first();
@@ -289,18 +294,18 @@ void japlay_play()
 	kick_playback();
 }
 
-void japlay_stop()
+void japlay_stop(void)
 {
 	reset = true;
 	play = false;
 }
 
-void japlay_pause()
+void japlay_pause(void)
 {
 	play = false;
 }
 
-void japlay_skip()
+void japlay_skip(void)
 {
 	struct song *song = get_playing();
 	struct song *next = playlist_next(song, true);
@@ -317,7 +322,7 @@ static bool load_plugin(const char *filename)
 	if (!dl)
 		return false;
 
-	struct input_plugin *(*get_info)() = dlsym(dl, "get_info");
+	struct input_plugin *(*get_info)(void) = dlsym(dl, "get_info");
 	if (!get_info) {
 		dlclose(dl);
 		return false;
@@ -325,14 +330,14 @@ static bool load_plugin(const char *filename)
 
 	struct input_plugin *info = get_info();
 
-	printf("found plugin: %s (%s)\n", file_base(filename), info->name);
+	info("found plugin: %s (%s)\n", file_base(filename), info->name);
 
 	plugins = g_list_prepend(plugins, info);
 
 	return true;
 }
 
-static void load_plugins()
+static void load_plugins(void)
 {
 	DIR *dir = opendir(PLUGIN_DIR);
 	if (!dir)
@@ -348,7 +353,7 @@ static void load_plugins()
 				strcpy_q(buf, plugin_dir);
 				strcpy_q(&buf[strlen(plugin_dir)], de->d_name);
 				if (!load_plugin(buf))
-					printf("Unable to load plugin %s\n", de->d_name);
+					warning("Unable to load plugin %s\n", de->d_name);
 				free(buf);
 			}
 		}
@@ -358,7 +363,48 @@ static void load_plugins()
 	closedir(dir);
 }
 
-void japlay_init()
+int japlay_connect(void)
+{
+	return unix_socket_connect(SOCKET_NAME);
+}
+
+void japlay_send(int fd, const char *filename)
+{
+	sendto(fd, filename, strlen(filename), 0, NULL, 0);
+}
+
+static int incoming_data(int fd, void *ctx)
+{
+	UNUSED(ctx);
+
+	char filename[PATH_MAX + 1];
+	ssize_t len = recvfrom(fd, filename, PATH_MAX, 0, NULL, 0);
+	if (len < 0) {
+		warning("recv failed (%s)\n", strerror(errno));
+		return -1;
+	}
+	if (len == 0)
+		return -1;
+	filename[len] = 0;
+	add_file_playlist(filename);
+	return 0;
+}
+
+static int incoming_client(int fd, void *ctx)
+{
+	UNUSED(ctx);
+
+	struct sockaddr_un addr;
+	socklen_t addrlen = sizeof(addr);
+	int rfd = accept(fd, (struct sockaddr *)&addr, &addrlen);
+	if (rfd < 0)
+		warning("accept failure (%s)\n", strerror(errno));
+	else
+		new_io_watch(rfd, incoming_data, NULL);
+	return 0;
+}
+
+void japlay_init(void)
 {
 	ao_initialize();
 	load_plugins();
@@ -367,7 +413,7 @@ void japlay_init()
 	ao_info **drivers = ao_driver_info_list(&count);
 	for (i = 0; i < count; ++i) {
 		if (drivers[i]->type == AO_TYPE_LIVE) {
-			printf("ao driver: %s (%s)\n", drivers[i]->short_name,
+			info("ao driver: %s (%s)\n", drivers[i]->short_name,
 				drivers[i]->name);
 		}
 	}
@@ -380,4 +426,13 @@ void japlay_init()
 	play_mutex = g_mutex_new();
 	play_cond = g_cond_new();
 	g_thread_create(playback_thread, NULL, false, NULL);
+
+	int fd = unix_socket_create(SOCKET_NAME);
+	if (fd >= 0)
+		new_io_watch(fd, incoming_client, NULL);
+}
+
+void japlay_exit(void)
+{
+	unlink(SOCKET_NAME);
 }

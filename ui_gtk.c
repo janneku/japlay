@@ -3,6 +3,7 @@
  * Copyright Janne Kulmala 2010
  */
 #include "ui.h"
+#include "common.h"
 #include "japlay.h"
 #include "playlist.h"
 #include "utils.h"
@@ -10,8 +11,6 @@
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
 #include <stdlib.h>
-
-#define UNUSED(x)		(void)x
 
 enum {
 	COL_ENTRY,
@@ -156,20 +155,10 @@ static void add_one_file(char *filename, gpointer ptr)
 			load_playlist_pls(filename);
 		else if (!strcasecmp(ext, "m3u"))
 			load_playlist_m3u(filename);
-		else {
-			struct song *song = new_song(filename);
-			if (song) {
-				add_playlist(song);
-				put_song(song);
-			}
-		}
-	} else {
-		struct song *song = new_song(filename);
-		if (song) {
-			add_playlist(song);
-			put_song(song);
-		}
-	}
+		else
+			add_file_playlist(filename);
+	} else
+		add_file_playlist(filename);
 	g_free(filename);
 }
 
@@ -297,9 +286,11 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 	quit = true;
 }
 
-static void x11_io_watch_cb(struct iowatch *watch)
+static void incoming_x11_event(int fd, void *ctx)
 {
-	UNUSED(watch);
+	UNUSED(fd);
+	UNUSED(ctx);
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -308,6 +299,15 @@ int main(int argc, char **argv)
 	gdk_threads_init();
 
 	main_thread = g_thread_self();
+
+	int fd = japlay_connect();
+	if (fd >= 0) {
+		int i;
+		for (i = 1; i < argc; ++i)
+			japlay_send(fd, argv[i]);
+		close(fd);
+		return 0;
+	}
 
 	japlay_init();
 
@@ -399,15 +399,10 @@ int main(int argc, char **argv)
 		load_playlist_m3u(buf);
 	}
 
-	for (i = 1; i < argc; ++i) {
-		struct song *song = new_song(argv[i]);
-		if (song) {
-			add_playlist(song);
-			put_song(song);
-		}
-	}
+	for (i = 1; i < argc; ++i)
+		add_file_playlist(argv[i]);
 
-	new_io_watch(ConnectionNumber(GDK_DISPLAY()), x11_io_watch_cb, NULL);
+	new_io_watch(ConnectionNumber(GDK_DISPLAY()), incoming_x11_event, NULL);
 
 	gdk_threads_enter();
 
@@ -426,6 +421,8 @@ int main(int argc, char **argv)
 
 	if (buf)
 		save_playlist_m3u(buf);
+
+	japlay_exit();
 
 	return 0;
 }

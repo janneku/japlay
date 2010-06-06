@@ -1,4 +1,5 @@
 #include "iowatch.h"
+#include "common.h"
 #include "list.h"
 #include <stdlib.h>
 #include <sys/select.h>
@@ -17,7 +18,7 @@ static int max_fd;
 
 struct iowatch *new_io_watch(int fd, io_watch_callback_t callback, void *ctx)
 {
-	struct iowatch *watch = calloc(1, sizeof(*watch));
+	struct iowatch *watch = NEW(struct iowatch);
 	if (!watch)
 		return NULL;
 	watch->fd = fd;
@@ -51,17 +52,7 @@ void remove_io_watch(struct iowatch *watch)
 	}
 }
 
-void *get_io_watch_context(struct iowatch *watch)
-{
-	return watch->ctx;
-}
-
-int get_io_watch_fd(struct iowatch *watch)
-{
-	return watch->fd;
-}
-
-void iowatch_select()
+void iowatch_select(void)
 {
 	if (!max_fd)
 		return;
@@ -73,22 +64,24 @@ void iowatch_select()
 
 	struct list_head *pos, *next;
 	list_for_each_safe(pos, next, &watches) {
-		struct iowatch *watch = list_container(pos, struct iowatch, head);
-		if (FD_ISSET(watch->fd, &watch_set))
-			watch->callback(watch);
-		else
+		struct iowatch *watch =
+			list_container(pos, struct iowatch, head);
+		if (FD_ISSET(watch->fd, &watch_set)) {
+			if (watch->callback(watch->fd, watch->ctx))
+				remove_io_watch(watch);
+		} else
 			FD_SET(watch->fd, &watch_set);
 	}
 }
 
-void init_iowatch()
+void init_iowatch(void)
 {
 	list_init(&watches);
 	max_fd = 0;
 	FD_ZERO(&watch_set);
 }
 
-void exit_iowatch()
+void exit_iowatch(void)
 {
 	/* TO DO */
 }

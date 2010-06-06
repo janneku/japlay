@@ -2,13 +2,7 @@
  * japlay MikMod module player plugin
  * Copyright Janne Kulmala 2010
  */
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <ctype.h>
 #include <mikmod.h>
-#include <glib.h>
 #include "plugin.h"
 
 #define UNUSED(x)		(void)x

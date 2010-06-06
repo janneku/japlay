@@ -14,7 +14,6 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <mad.h>
-#include <glib.h>
 #include "plugin.h"
 
 struct input_plugin_ctx {
@@ -83,7 +82,7 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 		sin.sin_port = htons(port);
 
 		if (connect(ctx->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-			printf("unable to connect: %s\n", strerror(errno));
+			printf("unable to connect (%s)\n", strerror(errno));
 			close(ctx->fd);
 			return false;
 		}
@@ -93,7 +92,7 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 	} else {
 		ctx->fd = open(filename, O_RDONLY);
 		if (ctx->fd < 0) {
-			printf("unable to open file: %s\n", strerror(errno));
+			printf("unable to open file (%s)\n", strerror(errno));
 			return false;
 		}
 	}
@@ -140,7 +139,7 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		}
 		ssize_t ret = read(ctx->fd, &ctx->buffer[len], sizeof(ctx->buffer) - len);
 		if (ret < 0) {
-			printf("read error: %s\n", strerror(errno));
+			printf("read failed (%s)\n", strerror(errno));
 			return 0;
 		}
 		len += ret;

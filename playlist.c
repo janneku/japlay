@@ -1,10 +1,10 @@
 #include "playlist.h"
+#include "common.h"
 #include "ui.h"
 #include "atomic.h"
 #include "list.h"
 #include "utils.h"
 #include <glib.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 static GMutex *playlist_mutex;
@@ -35,7 +35,7 @@ struct song *new_song(const char *filename)
 		return NULL;
 	printf("adding %s\n", fname);
 
-	struct song *song = calloc(1, sizeof(*song));
+	struct song *song = NEW(struct song);
 	if (!song) {
 		free(fname);
 		return NULL;
@@ -81,7 +81,7 @@ struct song *playlist_next(struct song *song, bool forward)
 	return NULL;
 }
 
-struct song *get_playlist_first()
+struct song *get_playlist_first(void)
 {
 	g_mutex_lock(playlist_mutex);
 	struct song *song = list_container(playlist.next,
@@ -115,7 +115,7 @@ void remove_playlist(struct song *song)
 	put_song(song);
 }
 
-void clear_playlist()
+void clear_playlist(void)
 {
 	struct list_head *pos, *next;
 
@@ -131,7 +131,7 @@ void clear_playlist()
 	g_mutex_unlock(playlist_mutex);
 }
 
-void shuffle_playlist()
+void shuffle_playlist(void)
 {
 	struct list_head *pos;
 
@@ -178,7 +178,7 @@ bool save_playlist_m3u(const char *filename)
 	return true;
 }
 
-void init_playlist()
+void init_playlist(void)
 {
 	list_init(&playlist);
 
