@@ -404,20 +404,20 @@ int main(int argc, char **argv)
 
 	new_io_watch(ConnectionNumber(GDK_DISPLAY()), incoming_x11_event, NULL);
 
-	gdk_threads_enter();
-
 	while (!quit) {
+		gdk_threads_enter();
+
 		/* process events before going to sleep */
 		while (gtk_events_pending())
 			gtk_main_iteration();
+
+		gdk_threads_leave();
 
 		if (quit)
 			break;
 
 		iowatch_select();
 	}
-
-	gdk_threads_leave();
 
 	if (buf)
 		save_playlist_m3u(buf);

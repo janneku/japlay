@@ -11,7 +11,7 @@
 #define strcpy_q(d, s)		\
 	memcpy(d, s, strlen(s) + 1)
 
-char *get_cwd()
+char *get_cwd(void)
 {
 	size_t len = 64;
 	char *buf = NULL;

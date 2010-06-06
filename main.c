@@ -203,24 +203,22 @@ static char *trim(char *buf)
 
 void add_file_playlist(const char *filename)
 {
-	struct song *song = new_song(filename);
+	char *path = absolute_path(filename);
+	if (!path)
+		return;
+	struct song *song = new_song(path);
 	if (song) {
 		add_playlist(song);
 		put_song(song);
 	}
+	free(path);
 }
 
 bool load_playlist_pls(const char *filename)
 {
-	char *playlist_name = absolute_path(filename);
-	if (!playlist_name)
+	FILE *f = fopen(filename, "r");
+	if (!f)
 		return false;
-
-	FILE *f = fopen(playlist_name, "r");
-	if (!f) {
-		free(playlist_name);
-		return false;
-	}
 
 	char row[512];
 	while (fgets(row, sizeof(row), f)) {
@@ -234,37 +232,33 @@ bool load_playlist_pls(const char *filename)
 			}
 		}
 		if (!memcmp(trim(row), "File", 4) && value) {
-			char *fname = build_filename(playlist_name, trim(value));
-			if (fname)
+			char *fname = build_filename(filename, trim(value));
+			if (fname) {
 				add_file_playlist(fname);
+				free(fname);
+			}
 		}
 	}
-	free(playlist_name);
 	fclose(f);
 	return true;
 }
 
 bool load_playlist_m3u(const char *filename)
 {
-	char *playlist_name = absolute_path(filename);
-	if (!playlist_name)
+	FILE *f = fopen(filename, "r");
+	if (!f)
 		return false;
-
-	FILE *f = fopen(playlist_name, "r");
-	if (!f) {
-		free(playlist_name);
-		return false;
-	}
 
 	char row[512];
 	while (fgets(row, sizeof(row), f)) {
 		if (row[0] != '#') {
-			char *fname = build_filename(playlist_name, trim(row));
-			if (fname)
+			char *fname = build_filename(filename, trim(row));
+			if (fname) {
 				add_file_playlist(fname);
+				free(fname);
+			}
 		}
 	}
-	free(playlist_name);
 	fclose(f);
 	return true;
 }
@@ -370,7 +364,11 @@ int japlay_connect(void)
 
 void japlay_send(int fd, const char *filename)
 {
-	sendto(fd, filename, strlen(filename), 0, NULL, 0);
+	char *path = absolute_path(filename);
+	if (path) {
+		sendto(fd, path, strlen(path), 0, NULL, 0);
+		free(path);
+	}
 }
 
 static int incoming_data(int fd, void *ctx)
@@ -380,11 +378,16 @@ static int incoming_data(int fd, void *ctx)
 	char filename[PATH_MAX + 1];
 	ssize_t len = recvfrom(fd, filename, PATH_MAX, 0, NULL, 0);
 	if (len < 0) {
+		if (errno == EAGAIN)
+			return 0;
 		warning("recv failed (%s)\n", strerror(errno));
+		close(fd);
 		return -1;
 	}
-	if (len == 0)
+	if (len == 0) {
+		close(fd);
 		return -1;
+	}
 	filename[len] = 0;
 	add_file_playlist(filename);
 	return 0;

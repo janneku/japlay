@@ -3,7 +3,6 @@
 #include "ui.h"
 #include "atomic.h"
 #include "list.h"
-#include "utils.h"
 #include <glib.h>
 #include <stdlib.h>
 
@@ -30,17 +29,10 @@ const char *get_song_filename(struct song *song)
 
 struct song *new_song(const char *filename)
 {
-	char *fname = absolute_path(filename);
-	if (!fname)
-		return NULL;
-	printf("adding %s\n", fname);
-
 	struct song *song = NEW(struct song);
-	if (!song) {
-		free(fname);
+	if (!song)
 		return NULL;
-	}
-	song->filename = fname;
+	song->filename = strdup(filename);
 	atomic_set(&song->refcount, 1);
 	song->ui_ctx = malloc(ui_song_ctx_size);
 
