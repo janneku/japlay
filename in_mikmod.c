@@ -7,6 +7,8 @@
 
 #define UNUSED(x)		(void)x
 
+static bool mikmod_init = false;
+
 struct input_plugin_ctx {
 	MODULE *mf;
 };
@@ -86,13 +88,16 @@ static MDRIVER drv_dummy = {
 
 static bool mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
 {
-	MikMod_RegisterAllLoaders();
-	MikMod_RegisterDriver(&drv_dummy);
+	if (!mikmod_init) {
+		mikmod_init = true;
+		MikMod_RegisterAllLoaders();
+		MikMod_RegisterDriver(&drv_dummy);
 
-	md_mode |= DMODE_16BITS | DMODE_INTERP | DMODE_STEREO;
-	md_mixfreq = 44100;
+		md_mode |= DMODE_16BITS | DMODE_INTERP | DMODE_STEREO;
+		md_mixfreq = 44100;
 
-	MikMod_Init("");
+		MikMod_Init("");
+	}
 
 	ctx->mf = Player_Load((char *)filename, 128, true);
 	if (!ctx->mf) {
@@ -107,6 +112,7 @@ static bool mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
 
 static void mikmod_close(struct input_plugin_ctx *ctx)
 {
+	Player_Stop();
 	Player_Free(ctx->mf);
 }
 
