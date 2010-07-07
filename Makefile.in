@@ -1,5 +1,6 @@
 CC = {CC}
 PREFIX = {PREFIX}
+LIBPATH = {LIBPATH}
 CFLAGS = -O2 -W -Wall `pkg-config ao glib-2.0 --cflags` -g -pthread
 LDFLAGS = `pkg-config ao glib-2.0 gthread-2.0 --libs` -lpthread
 PLUGIN_CFLAGS = $(CFLAGS) -fPIC
@@ -34,8 +35,8 @@ $(GTK_BINARY):	$(OBJ) ui_gtk.o
 
 install:	$(GTK_BINARY) $(PLUGINS)
 	install -m 755 japlay $(DESTDIR)$(PREFIX)/bin
-	mkdir -p -m 755 $(DESTDIR)$(PREFIX)/lib/japlay
-	install -m 755 $(PLUGINS) $(DESTDIR)$(PREFIX)/lib/japlay
+	mkdir -p -m 755 $(DESTDIR)$(LIBPATH)/japlay
+	install -m 755 $(PLUGINS) $(DESTDIR)$(LIBPATH)/japlay
 
 clean:
 	rm -f $(OBJ) $(PLUGIN_OBJS) $(GTK_BINARY) $(PLUGINS)
