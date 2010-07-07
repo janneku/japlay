@@ -292,6 +292,12 @@ static int incoming_x11_event(int fd, void *ctx)
 	return 0;
 }
 
+static void handle_sigint(int sig)
+{
+	UNUSED(sig);
+	quit = true;
+}
+
 int main(int argc, char **argv)
 {
 	g_thread_init(NULL);
@@ -399,6 +405,8 @@ int main(int argc, char **argv)
 		add_file_playlist(argv[i]);
 
 	new_io_watch(ConnectionNumber(GDK_DISPLAY()), incoming_x11_event, NULL);
+
+	signal(SIGINT, handle_sigint);
 
 	while (!quit) {
 		gdk_threads_enter();
