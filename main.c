@@ -282,6 +282,8 @@ void japlay_play(void)
 {
 	if (!playing) {
 		struct song *song = get_playlist_first();
+		if (!song)
+		    return;
 		set_playing(song);
 		put_song(song);
 	}

@@ -76,9 +76,11 @@ struct song *playlist_next(struct song *song, bool forward)
 struct song *get_playlist_first(void)
 {
 	g_mutex_lock(playlist_mutex);
-	struct song *song = list_container(playlist.next,
-				struct song, head);
-	get_song(song);
+	struct song *song = NULL;
+	if (!list_empty(&playlist)) {
+		song = list_container(playlist.next, struct song, head);
+		get_song(song);
+	}
 	g_mutex_unlock(playlist_mutex);
 
 	return song;
