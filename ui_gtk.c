@@ -32,6 +32,7 @@ static GtkWidget *power_bar;
 static GtkListStore *playlist_store;
 static GThread *main_thread;
 static bool quit = false;
+static int wake_fd;
 
 static void lock_ui()
 {
@@ -132,6 +133,7 @@ void ui_set_playing(struct song *prev, struct song *song)
 		gtk_window_set_title(GTK_WINDOW(main_window), buf);
 		free(buf);
 	}
+	write(wake_fd, "", 1);
 	unlock_ui();
 }
 
@@ -142,6 +144,7 @@ void ui_set_status(int power, unsigned int position)
 	char buf[10];
 	sprintf(buf, "%d:%02d", position / (1000 * 60), (position / 1000) % 60);
 	gtk_progress_bar_set_text(GTK_PROGRESS_BAR(power_bar), buf);
+	write(wake_fd, "", 1);
 	unlock_ui();
 }
 
@@ -285,6 +288,17 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 	quit = true;
 }
 
+static int incoming_wake(int fd, int flags, void *ctx)
+{
+	UNUSED(flags);
+	UNUSED(ctx);
+
+	/* drain pipe read buffer */
+	char buf[64];
+	read(fd, buf, sizeof buf);
+	return 0;
+}
+
 static int incoming_x11_event(int fd, int flags, void *ctx)
 {
 	UNUSED(fd);
@@ -405,6 +419,11 @@ int main(int argc, char **argv)
 	for (i = 1; i < argc; ++i)
 		add_file_playlist(argv[i]);
 
+	int pipefd[2];
+	pipe(pipefd);
+	wake_fd = pipefd[1];
+
+	new_io_watch(pipefd[0], IO_IN, incoming_wake, NULL);
 	new_io_watch(ConnectionNumber(GDK_DISPLAY()), IO_IN, incoming_x11_event, NULL);
 
 	signal(SIGINT, handle_sigint);
