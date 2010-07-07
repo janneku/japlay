@@ -5,6 +5,10 @@ struct input_format {
 	unsigned int rate, channels;
 };
 
+struct songpos {
+	unsigned long msecs;
+};
+
 struct input_plugin_ctx;
 
 typedef signed short sample_t;
@@ -36,6 +40,11 @@ struct input_plugin {
 	   of the format structure. */
 	size_t (*fillbuf)(struct input_plugin_ctx *ctx, sample_t *buffer, size_t maxlen,
 			  struct input_format *format);
+
+	/* Return -1 for EOF, 0 if not supported, and 1 if seek successful */
+	int (*seek)(struct input_plugin_ctx
+		    *ctx, const struct songpos *curpos,
+		    struct songpos *newpos);
 };
 
 const struct input_plugin *get_info();

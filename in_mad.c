@@ -188,13 +188,13 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 }
 
 static const struct input_plugin plugin_info = {
-	sizeof(struct input_plugin),
-	sizeof(struct input_plugin_ctx),
-	"libmad MPEG audio decoder",
-	mad_detect,
-	mad_open,
-	mad_close,
-	mad_fillbuf,
+	.size = sizeof(struct input_plugin),
+	.ctx_size = sizeof(struct input_plugin_ctx),
+	.name = "libmad MPEG audio decoder",
+	.detect = mad_detect,
+	.open = mad_open,
+	.close = mad_close,
+	.fillbuf = mad_fillbuf,
 };
 
 const struct input_plugin *get_info()
