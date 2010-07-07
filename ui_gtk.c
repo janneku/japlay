@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	if (japlay_init()) {
+	if (japlay_init(&argc, argv)) {
 		error("Can not initialize japlay\n");
 		return -1;
 	}

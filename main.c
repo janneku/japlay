@@ -442,8 +442,17 @@ static int incoming_client(int fd, void *ctx)
 	return 0;
 }
 
-int japlay_init(void)
+int japlay_init(int *argc, char **argv)
 {
+	int i, newargc = 1;
+	for (i = 1; i < *argc; ++i) {
+		if (!strcmp(argv[i], "-d")) {
+			debug = 1;
+		} else
+			argv[newargc++] = argv[i];
+	}
+	*argc = newargc;
+
 	const char *configdir = get_config_dir();
 	if (configdir == NULL) {
 		error("Can not determine/allocate config dir: $HOME/.japlay");
@@ -457,7 +466,7 @@ int japlay_init(void)
 	ao_initialize();
 	load_plugins();
 
-	int i, count;
+	int count;
 	ao_info **drivers = ao_driver_info_list(&count);
 	for (i = 0; i < count; ++i) {
 		if (drivers[i]->type == AO_TYPE_LIVE) {

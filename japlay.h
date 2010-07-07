@@ -23,7 +23,7 @@ void japlay_skip(void);
 int japlay_connect(void);
 void japlay_send(int fd, const char *filename);
 
-int japlay_init(void);
+int japlay_init(int *argc, char **argv);
 void japlay_exit(void);
 
 #endif
