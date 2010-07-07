@@ -1,0 +1,17 @@
+== Installation instructions ==
+
+$ ./configure
+$ make
+$ make install
+
+Installs by default to /usr/local. Use ./configure --prefix=PREFIX
+to override.
+
+== Dependencies for Debian GNU/Linux systems ==
+
+* libao-dev (ao for audio playback)
+* libglib2.0-dev
+* libgtk2.0-dev
+* libmikmod2-dev (mikmod for tracker modules)
+* libmad0-dev (mp3)
+* libvorbis-dev

@@ -10,6 +10,8 @@
 #include "ui.h"
 #include "iowatch.h"
 #include "unixsocket.h"
+#include "config.h"
+
 #include <glib.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -18,8 +20,6 @@
 #include <ao/ao.h>
 #include <sys/un.h>
 #include <sys/socket.h>
-
-#define PLUGIN_DIR		"/usr/lib/japlay"
 
 #define SOCKET_NAME		"/tmp/japlay"
 

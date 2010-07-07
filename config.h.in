@@ -1,0 +1,6 @@
+#ifndef _JAPLAY_CONFIG_H_
+#define _JAPLAY_CONFIG_H_
+
+#define PLUGIN_DIR		"{PREFIX}/lib/japlay"
+
+#endif

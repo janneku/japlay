@@ -1,0 +1,35 @@
+#!/bin/sh
+
+prefix=/usr/local
+
+for opt in "$@" ; do
+	case $opt in
+	--prefix=*)
+		prefix=`echo $opt | sed -n 's/--prefix=\(.*\)/\1/p'`
+		;;
+	--help)
+		echo ""
+		echo "Valid options are:"
+		echo "--prefix=dir           Install to prefix 'dir'"
+		echo "                       but copy files to 'dest/prefix' on make install"
+		exit
+		;;
+	esac
+done
+
+if test -z "$CC" ; then
+    CC=gcc
+fi
+
+for sname in Makefile.in config.h.in ; do
+    dname="$(basename "$sname" ".in")"
+    sed -e "s|{PREFIX}|$prefix|g" \
+	-e "s|{CC}|$CC|g" \
+	< "$sname" > "$dname"
+done
+
+echo
+echo "Install path:    $prefix/bin"
+echo "Compiler:        $CC"
+echo
+echo "Configure successful"
