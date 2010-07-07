@@ -40,7 +40,6 @@ char *get_cwd(void)
 
 char *get_config_dir(void)
 {
-	char *name;
 	const char *home = getenv("HOME");
 	if (home == NULL)
 		return NULL;
