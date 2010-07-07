@@ -78,7 +78,7 @@ struct song *playlist_next(struct song *song, bool forward)
 		else
 			pos = song->head.prev;
 		if (pos != &playlist) {
-			next = list_container(pos, struct song, head);
+			next = container_of(pos, struct song, head);
 			get_song(next);
 		}
 	}
@@ -91,7 +91,7 @@ struct song *get_playlist_first(void)
 	PLAYLIST_LOCK;
 	struct song *song = NULL;
 	if (!list_empty(&playlist)) {
-		song = list_container(playlist.next, struct song, head);
+		song = container_of(playlist.next, struct song, head);
 		get_song(song);
 	}
 	PLAYLIST_UNLOCK;
@@ -128,7 +128,7 @@ void clear_playlist(void)
 
 	PLAYLIST_LOCK;
 	list_for_each_safe(pos, next, &playlist) {
-		struct song *song = list_container(pos, struct song, head);
+		struct song *song = container_of(pos, struct song, head);
 		memset(&song->head, 0, sizeof(song->head));
 		ui_remove_playlist(song);
 		put_song(song);
@@ -146,7 +146,7 @@ void shuffle_playlist(void)
 	struct song **table = malloc(sizeof(void *) * playlist_len);
 	unsigned int len = 0;
 	list_for_each(pos, &playlist) {
-		struct song *song = list_container(pos, struct song, head);
+		struct song *song = container_of(pos, struct song, head);
 		unsigned int i = rand() % (len + 1);
 		if (i != len)
 			memmove(&table[i + 1], &table[i], (len - i) * sizeof(table[0]));
@@ -175,7 +175,7 @@ bool save_playlist_m3u(const char *filename)
 
 	PLAYLIST_LOCK;
 	list_for_each(pos, &playlist) {
-		struct song *song = list_container(pos, struct song, head);
+		struct song *song = container_of(pos, struct song, head);
 		fputs(song->filename, f);
 		fputc('\n', f);
 	}

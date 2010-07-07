@@ -55,11 +55,6 @@ static inline int list_empty(struct list_head *entry)
         return (entry->next == entry);
 }
 
-#define list_container(entry, type, member) ({ \
-                typeof(((type *)0)->member) *ptr = entry; \
-                const size_t off = (size_t)&(((type *)0)->member); \
-                (type *)((char *)ptr - off); })
-
 #define list_for_each(pos, head) \
                 for(pos = (head)->next; pos != (head); pos = pos->next)
 #define list_for_each_safe(pos, n, head) \

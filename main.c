@@ -67,7 +67,7 @@ static struct input_plugin *detect_plugin(const char *filename)
 {
 	struct list_head *pos;
 	list_for_each(pos, &plugins) {
-		struct plugin *plugin = list_container(pos, struct plugin, head);
+		struct plugin *plugin = container_of(pos, struct plugin, head);
 		if (plugin->info->detect(filename))
 			return plugin->info;
 	}
@@ -406,8 +406,9 @@ void japlay_send(int fd, const char *filename)
 	}
 }
 
-static int incoming_data(int fd, void *ctx)
+static int incoming_data(int fd, int flags, void *ctx)
 {
+	UNUSED(flags);
 	UNUSED(ctx);
 
 	char filename[PATH_MAX + 1];
@@ -428,8 +429,9 @@ static int incoming_data(int fd, void *ctx)
 	return 0;
 }
 
-static int incoming_client(int fd, void *ctx)
+static int incoming_client(int fd, int flags, void *ctx)
 {
+	UNUSED(flags);
 	UNUSED(ctx);
 
 	struct sockaddr_un addr;
@@ -438,7 +440,7 @@ static int incoming_client(int fd, void *ctx)
 	if (rfd < 0)
 		warning("accept failure (%s)\n", strerror(errno));
 	else
-		new_io_watch(rfd, incoming_data, NULL);
+		new_io_watch(rfd, IO_IN, incoming_data, NULL);
 	return 0;
 }
 
@@ -476,7 +478,7 @@ int japlay_init(int *argc, char **argv)
 	}
 
 	init_playlist();
-	init_iowatch();
+	iowatch_init();
 
 	pthread_mutex_init(&playing_mutex, NULL);
 
@@ -487,7 +489,7 @@ int japlay_init(int *argc, char **argv)
 
 	int fd = unix_socket_create(SOCKET_NAME);
 	if (fd >= 0)
-		new_io_watch(fd, incoming_client, NULL);
+		new_io_watch(fd, IO_IN, incoming_client, NULL);
 
 	return 0;
 }

@@ -285,9 +285,10 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 	quit = true;
 }
 
-static int incoming_x11_event(int fd, void *ctx)
+static int incoming_x11_event(int fd, int flags, void *ctx)
 {
 	UNUSED(fd);
+	UNUSED(flags);
 	UNUSED(ctx);
 	return 0;
 }
@@ -404,7 +405,7 @@ int main(int argc, char **argv)
 	for (i = 1; i < argc; ++i)
 		add_file_playlist(argv[i]);
 
-	new_io_watch(ConnectionNumber(GDK_DISPLAY()), incoming_x11_event, NULL);
+	new_io_watch(ConnectionNumber(GDK_DISPLAY()), IO_IN, incoming_x11_event, NULL);
 
 	signal(SIGINT, handle_sigint);
 
@@ -420,7 +421,7 @@ int main(int argc, char **argv)
 		if (quit)
 			break;
 
-		iowatch_select();
+		iowatch_poll();
 	}
 
 	if (playlistpath)
