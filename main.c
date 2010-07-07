@@ -235,15 +235,12 @@ bool load_playlist_pls(const char *filename)
 	char row[512];
 	while (fgets(row, sizeof(row), f)) {
 		size_t i;
-		char *value = NULL;
-		for (i = 0; row[i]; ++i) {
-			if (row[i] == '=') {
-				row[i] = 0;
-				value = &row[i + 1];
-				break;
-			}
-		}
-		if (!memcmp(trim(row), "File", 4) && value) {
+		char *value = strchr(row, '=');
+		if (value == NULL)
+			continue;
+		*value = 0;
+		value++;
+		if (!memcmp(trim(row), "File", 4)) {
 			char *fname = build_filename(filename, trim(value));
 			if (fname) {
 				add_file_playlist(fname);
