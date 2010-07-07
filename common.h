@@ -7,6 +7,7 @@
 
 #define UNUSED(x)		(void)(x)
 
+#define error(fmt...)		fprintf(stderr, "ERROR: " fmt)
 #define warning(fmt...)		fprintf(stderr, "WARNING: " fmt)
 #define info(fmt...)		if(debug) fprintf(stderr, "INFO: " fmt)
 

@@ -422,8 +422,14 @@ static int incoming_client(int fd, void *ctx)
 	return 0;
 }
 
-void japlay_init(void)
+int japlay_init(void)
 {
+	const char *home = getenv("HOME");
+	if (home == NULL) {
+		error("HOME envinroment variable not found\n");
+		return -1;
+	}
+
 	ao_initialize();
 	load_plugins();
 
@@ -448,6 +454,8 @@ void japlay_init(void)
 	int fd = unix_socket_create(SOCKET_NAME);
 	if (fd >= 0)
 		new_io_watch(fd, incoming_client, NULL);
+
+	return 0;
 }
 
 void japlay_exit(void)

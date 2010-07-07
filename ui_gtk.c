@@ -312,7 +312,10 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	japlay_init();
+	if (japlay_init()) {
+		error("Can not initialize japlay\n");
+		return -1;
+	}
 
 	gtk_init(&argc, &argv);
 
