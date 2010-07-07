@@ -22,10 +22,10 @@ char *concat_strings(const char *s, const char *t)
 
 char *get_config_dir(void)
 {
-	char *name;
 	const char *home = getenv("HOME");
 	if (home == NULL)
 		return NULL;
+
 	return concat_strings(home, "/.japlay");
 }
 
@@ -69,6 +69,16 @@ const char *file_base(const char *filename)
 	return &filename[i];
 }
 
+char *file_dir(const char *filename)
+{
+	size_t i = strlen(filename);
+	while (i && filename[i - 1] != '/')
+		--i;
+	while (i && filename[i - 1] == '/')
+		--i;
+	return strndup(filename, i);
+}
+
 char *build_filename(const char *orig, const char *filename)
 {
 	if (!filename[0])
@@ -76,17 +86,13 @@ char *build_filename(const char *orig, const char *filename)
 	if (!memcmp(filename, "http://", 7) || filename[0] == '/')
 		return strdup(filename);
 
-	size_t i = strlen(orig);
-	while (i && orig[i - 1] != '/')
-		--i;
-	while (i && orig[i - 1] == '/')
-		--i;
-
-	char *buf = malloc(i + strlen(filename) + 2);
-	if (!buf)
+	char *dir = file_dir(orig);
+	if (dir == NULL)
 		return NULL;
-	memcpy(buf, orig, i);
-	buf[i] = '/';
-	memcpy(&buf[i + 1], filename, strlen(filename) + 1);
-	return buf;
+
+	char *name;
+	if (asprintf(&name, "%s/%s", dir, filename) < 0)
+		name = NULL;
+	free(dir);
+	return name;
 }
