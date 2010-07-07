@@ -139,10 +139,13 @@ void ui_set_playing(struct song *prev, struct song *song)
 	unlock_ui();
 }
 
-void ui_set_power(int power)
+void ui_set_status(int power, unsigned int position)
 {
 	lock_ui();
 	gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(power_bar), power / 256.0);
+	char buf[10];
+	sprintf(buf, "%d:%02d", position / (1000 * 60), (position / 1000) % 60);
+	gtk_progress_bar_set_text(GTK_PROGRESS_BAR(power_bar), buf);
 	unlock_ui();
 }
 
@@ -286,7 +289,7 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 	quit = true;
 }
 
-static void incoming_x11_event(int fd, void *ctx)
+static int incoming_x11_event(int fd, void *ctx)
 {
 	UNUSED(fd);
 	UNUSED(ctx);

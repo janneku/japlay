@@ -84,7 +84,8 @@ static gpointer playback_thread(gpointer ptr)
 	struct input_plugin *plugin = NULL;
 	struct input_plugin_ctx *ctx = NULL;
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,};
-	int power_cnt = 0, power = 0;
+	unsigned int power_cnt = 0, power = 0;
+	unsigned int position = 0, pos_cnt = 0;
 
 	while (true) {
 		g_mutex_lock(playing_mutex);
@@ -135,6 +136,8 @@ static gpointer playback_thread(gpointer ptr)
 				continue;
 			}
 			put_song(song);
+			position = 0;
+			pos_cnt = 0;
 		}
 		else
 			g_mutex_unlock(playing_mutex);
@@ -164,6 +167,7 @@ static gpointer playback_thread(gpointer ptr)
 			format.channels = iformat.channels;
 			power_cnt = 0;
 			power = 0;
+			pos_cnt = 0;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
 				warning("Unable to open audio device\n");
@@ -176,9 +180,18 @@ static gpointer playback_thread(gpointer ptr)
 		for (i = power_cnt & 31; i < len; i += 32)
 			power += abs(buffer[i]) / 256;
 
+		unsigned int samplerate = format.rate * format.channels;
+		pos_cnt += len;
+
+		/* advance song position with full milliseconds from pos_cnt */
+		unsigned int adv = pos_cnt * 1000 / samplerate;
+		position += adv;
+		pos_cnt -= adv * samplerate / 1000;
+
+		/* Update UI status every 16 times per second */
 		power_cnt += len;
-		if (power_cnt >= format.rate * format.channels / 16) {
-			ui_set_power(power * 64 / power_cnt);
+		if (power_cnt >= (unsigned int) format.rate * format.channels / 16) {
+			ui_set_status(power * 64 / power_cnt, position);
 			power_cnt = 0;
 			power = 0;
 		}

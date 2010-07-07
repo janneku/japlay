@@ -9,5 +9,5 @@ extern size_t ui_song_ctx_size;
 void ui_add_playlist(struct song *song);
 void ui_remove_playlist(struct song *song);
 void ui_set_playing(struct song *prev, struct song *song);
-void ui_set_power(int power);
+void ui_set_status(int power, unsigned int position);
 
