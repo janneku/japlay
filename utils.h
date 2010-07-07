@@ -2,7 +2,6 @@
 #define _JAPLAY_UTILS_H_
 
 char *concat_strings(const char *s, const char *t);
-char *get_cwd(void);
 char *get_config_dir(void);
 char *get_config_name(const char *part);
 char *absolute_path(const char *filename);

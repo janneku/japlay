@@ -20,24 +20,6 @@ char *concat_strings(const char *s, const char *t)
 	return buf;
 }
 
-char *get_cwd(void)
-{
-	size_t len = 64;
-	char *buf = NULL;
-	while (len <= 4096) {
-		buf = realloc(buf, len);
-		if (!buf)
-			return NULL;
-		if (getcwd(buf, len))
-			return buf;
-		else if (errno != ERANGE)
-			break;
-		len *= 2;
-	}
-	free(buf);
-	return NULL;
-}
-
 char *get_config_dir(void)
 {
 	char *name;
@@ -68,11 +50,13 @@ char *absolute_path(const char *filename)
 	if (!memcmp(filename, "http://", 7) || filename[0] == '/')
 		return strdup(filename);
 
-	char *cwd = get_cwd();
-	if (!cwd)
+	char *cwd = getcwd(NULL, 0);
+	if (cwd == NULL)
 		return NULL;
 
-	char *name = concat_strings(cwd, filename);
+	char *name;
+	if (asprintf(&name, "%s/%s", cwd, filename) < 0)
+		name = NULL;
 	free(cwd);
 	return name;
 }
