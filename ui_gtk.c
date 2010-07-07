@@ -33,9 +33,6 @@ static GtkListStore *playlist_store;
 static GThread *main_thread;
 static bool quit = false;
 
-#define strcpy_q(d, s)		\
-	memcpy(d, s, strlen(s) + 1)
-
 static void lock_ui()
 {
 	if (g_thread_self() != main_thread)
@@ -130,10 +127,8 @@ void ui_set_playing(struct song *prev, struct song *song)
 
 	const char *name = get_display_name(song);
 
-	char *buf = malloc(strlen(name) + strlen(app_name) + 1);
+	char *buf = concat_strings(name, app_name);
 	if (buf) {
-		strcpy_q(buf, name);
-		strcpy_q(&buf[strlen(name)], app_name);
 		gtk_window_set_title(GTK_WINDOW(main_window), buf);
 		free(buf);
 	}
@@ -396,15 +391,9 @@ int main(int argc, char **argv)
 	gtk_widget_set_size_request(vbox, 350, 400);
 	gtk_widget_show_all(main_window);
 
-	static const char playlist_name[] = "/.japlay/playlist_store.m3u";
-
-	const char *home = getenv("HOME");
-	char *buf = malloc(strlen(home) + strlen(playlist_name) + 1);
-	if (buf) {
-		strcpy_q(buf, home);
-		strcpy_q(&buf[strlen(home)], playlist_name);
-		load_playlist_m3u(buf);
-	}
+	char *playlistpath = get_config_name("playlist_store.m3u");
+	if (playlistpath)
+		load_playlist_m3u(playlistpath);
 
 	for (i = 1; i < argc; ++i)
 		add_file_playlist(argv[i]);
@@ -426,8 +415,8 @@ int main(int argc, char **argv)
 		iowatch_select();
 	}
 
-	if (buf)
-		save_playlist_m3u(buf);
+	if (playlistpath)
+		save_playlist_m3u(playlistpath);
 
 	japlay_exit();
 

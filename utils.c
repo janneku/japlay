@@ -2,14 +2,23 @@
  * japlay - Just Another Player
  * Copyright Janne Kulmala 2010
  */
+#define _GNU_SOURCE
+
 #include "utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <assert.h>
+#include <stdio.h>
 
-#define strcpy_q(d, s)		\
-	memcpy(d, s, strlen(s) + 1)
+char *concat_strings(const char *s, const char *t)
+{
+	char *buf;
+	if (asprintf(&buf, "%s%s", s, t) < 0)
+		return NULL;
+	return buf;
+}
 
 char *get_cwd(void)
 {
@@ -29,6 +38,31 @@ char *get_cwd(void)
 	return NULL;
 }
 
+char *get_config_dir(void)
+{
+	char *name;
+	const char *home = getenv("HOME");
+	if (home == NULL)
+		return NULL;
+	return concat_strings(home, "/.japlay");
+}
+
+/*
+ * Return $HOME/.japlay/part, or NULL on error.
+ */
+char *get_config_name(const char *part)
+{
+	char *name;
+	const char *home = getenv("HOME");
+	if (home == NULL)
+		return NULL;
+
+	if (asprintf(&name, "%s/.japlay/%s", home, part) < 0)
+		return NULL;
+
+	return name;
+}
+
 char *absolute_path(const char *filename)
 {
 	if (!memcmp(filename, "http://", 7) || filename[0] == '/')
@@ -38,13 +72,9 @@ char *absolute_path(const char *filename)
 	if (!cwd)
 		return NULL;
 
-	size_t cwd_len = strlen(cwd);
-	cwd = realloc(cwd, cwd_len + strlen(filename) + 2);
-	if (!cwd)
-		return NULL;
-	cwd[cwd_len] = '/';
-	strcpy_q(&cwd[cwd_len + 1], filename);
-	return cwd;
+	char *name = concat_strings(cwd, filename);
+	free(cwd);
+	return name;
 }
 
 const char *file_base(const char *filename)
@@ -73,6 +103,6 @@ char *build_filename(const char *orig, const char *filename)
 		return NULL;
 	memcpy(buf, orig, i);
 	buf[i] = '/';
-	strcpy_q(&buf[i + 1], filename);
+	memcpy(&buf[i + 1], filename, strlen(filename) + 1);
 	return buf;
 }

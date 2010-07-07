@@ -20,11 +20,10 @@
 #include <ao/ao.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define SOCKET_NAME		"/tmp/japlay"
-
-#define strcpy_q(d, s)		\
-	memcpy(d, s, strlen(s) + 1)
 
 int debug = 0;
 
@@ -357,10 +356,8 @@ static void load_plugins(void)
 	struct dirent *de = readdir(dir);
 	while (de) {
 		if (de->d_name[0] != '.') {
-			char *buf = malloc(strlen(plugin_dir) + strlen(de->d_name) + 1);
+			char *buf = concat_strings(plugin_dir, de->d_name);
 			if (buf) {
-				strcpy_q(buf, plugin_dir);
-				strcpy_q(&buf[strlen(plugin_dir)], de->d_name);
 				if (!load_plugin(buf))
 					warning("Unable to load plugin %s\n", de->d_name);
 				free(buf);
@@ -424,9 +421,13 @@ static int incoming_client(int fd, void *ctx)
 
 int japlay_init(void)
 {
-	const char *home = getenv("HOME");
-	if (home == NULL) {
-		error("HOME envinroment variable not found\n");
+	const char *configdir = get_config_dir();
+	if (configdir == NULL) {
+		error("Can not determine/allocate config dir: $HOME/.japlay");
+		return -1;
+	}
+	if (mkdir(configdir, 0700) && errno != EEXIST) {
+		error("Can not create config dir: %s (%s)\n", configdir, strerror(errno));
 		return -1;
 	}
 
