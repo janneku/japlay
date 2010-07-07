@@ -22,12 +22,13 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 #define SOCKET_NAME		"/tmp/japlay"
 
 int debug = 0;
 
-static GMutex *playing_mutex;
+static pthread_mutex_t playing_mutex;
 static GMutex *play_mutex;
 static GCond *play_cond;
 static bool play = false;
@@ -35,13 +36,16 @@ static bool reset = false;
 static GList *plugins = NULL;
 static struct song *playing = NULL;
 
+#define PLAYING_LOCK pthread_mutex_lock(&playing_mutex)
+#define PLAYING_UNLOCK pthread_mutex_unlock(&playing_mutex)
+
 struct song *get_playing(void)
 {
-	g_mutex_lock(playing_mutex);
+	PLAYING_LOCK;
 	struct song *song = playing;
 	if (song)
 		get_song(song);
-	g_mutex_unlock(playing_mutex);
+	PLAYING_UNLOCK;
 	return song;
 }
 
@@ -62,12 +66,12 @@ static void set_playing(struct song *song)
 {
 	get_song(song);
 
-	g_mutex_lock(playing_mutex);
+	PLAYING_LOCK;
 	struct song *prev = playing;
 	playing = song;
 	reset = true;
 	ui_set_playing(prev, playing);
-	g_mutex_unlock(playing_mutex);
+	PLAYING_UNLOCK;
 
 	if (prev)
 		put_song(prev);
@@ -87,10 +91,10 @@ static gpointer playback_thread(gpointer ptr)
 	unsigned int position = 0, pos_cnt = 0;
 
 	while (true) {
-		g_mutex_lock(playing_mutex);
+		PLAYING_LOCK;
 		if (reset) {
 			reset = false;
-			g_mutex_unlock(playing_mutex);
+			PLAYING_UNLOCK;
 
 			if (plugin) {
 				plugin->close(ctx);
@@ -98,7 +102,7 @@ static gpointer playback_thread(gpointer ptr)
 			}
 			plugin = NULL;
 		}
-		g_mutex_unlock(playing_mutex);
+		PLAYING_UNLOCK;
 
 		g_mutex_lock(play_mutex);
 		if (!play) {
@@ -108,11 +112,11 @@ static gpointer playback_thread(gpointer ptr)
 		}
 		g_mutex_unlock(play_mutex);
 
-		g_mutex_lock(playing_mutex);
+		PLAYING_LOCK;
 		if (reset || !plugin) {
 			struct song *song = playing;
 			get_song(song);
-			g_mutex_unlock(playing_mutex);
+			PLAYING_UNLOCK;
 
 			if (plugin) {
 				plugin->close(ctx);
@@ -139,7 +143,7 @@ static gpointer playback_thread(gpointer ptr)
 			pos_cnt = 0;
 		}
 		else
-			g_mutex_unlock(playing_mutex);
+			PLAYING_UNLOCK;
 
 		struct input_format iformat = {.rate = 0,};
 		size_t len = plugin->fillbuf(ctx, buffer,
@@ -443,7 +447,7 @@ int japlay_init(void)
 	init_playlist();
 	init_iowatch();
 
-	playing_mutex = g_mutex_new();
+	pthread_mutex_init(&playing_mutex, NULL);
 
 	play_mutex = g_mutex_new();
 	play_cond = g_cond_new();
