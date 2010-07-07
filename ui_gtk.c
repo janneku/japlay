@@ -11,6 +11,7 @@
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 enum {
 	COL_ENTRY,
