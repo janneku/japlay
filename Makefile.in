@@ -1,7 +1,7 @@
 CC = {CC}
 PREFIX = {PREFIX}
-CFLAGS = -O2 -W -Wall `pkg-config ao glib-2.0 --cflags` -g
-LDFLAGS = `pkg-config ao glib-2.0 gthread-2.0 --libs`
+CFLAGS = -O2 -W -Wall `pkg-config ao glib-2.0 --cflags` -g -pthread
+LDFLAGS = `pkg-config ao glib-2.0 gthread-2.0 --libs` -lpthread
 PLUGIN_CFLAGS = $(CFLAGS) -fPIC
 PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 

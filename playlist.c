@@ -1,18 +1,23 @@
 #include "playlist.h"
 #include "common.h"
 #include "ui.h"
-#include "atomic.h"
 #include "list.h"
 #include <glib.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 static GMutex *playlist_mutex;
 static struct list_head playlist;
 static int playlist_len = 0;
 
+static pthread_spinlock_t refcountspinlock;
+
+#define REF_COUNT_LOCK pthread_spin_lock(&refcountspinlock)
+#define REF_COUNT_UNLOCK pthread_spin_unlock(&refcountspinlock)
+
 struct song {
 	struct list_head head;
-	atomic_t refcount;
+	unsigned int refcount;
 	char *filename;
 	struct song_ui_ctx *ui_ctx;
 };
@@ -33,7 +38,7 @@ struct song *new_song(const char *filename)
 	if (!song)
 		return NULL;
 	song->filename = strdup(filename);
-	atomic_set(&song->refcount, 1);
+	song->refcount = 1;
 	song->ui_ctx = malloc(ui_song_ctx_size);
 
 	return song;
@@ -41,16 +46,21 @@ struct song *new_song(const char *filename)
 
 void get_song(struct song *song)
 {
-	atomic_inc(&song->refcount);
+	REF_COUNT_LOCK;
+	song->refcount++;
+	REF_COUNT_UNLOCK;
 }
 
 void put_song(struct song *song)
 {
-	if (atomic_dec_and_test(&song->refcount)) {
+	REF_COUNT_LOCK;
+	song->refcount--;
+	if (!song->refcount) {
 		free(song->filename);
 		free(song->ui_ctx);
 		free(song);
 	}
+	REF_COUNT_UNLOCK;
 }
 
 struct song *playlist_next(struct song *song, bool forward)
@@ -174,6 +184,7 @@ bool save_playlist_m3u(const char *filename)
 
 void init_playlist(void)
 {
+	pthread_spin_init(&refcountspinlock, 0);
 	list_init(&playlist);
 
 	playlist_mutex = g_mutex_new();
