@@ -8,8 +8,6 @@ struct input_plugin;
 
 struct song *get_playing(void);
 
-struct input_plugin *detect_plugin(const char *filename);
-
 void add_file_playlist(const char *filename);
 
 bool load_playlist_pls(const char *filename);

@@ -10,9 +10,9 @@
 #include "ui.h"
 #include "iowatch.h"
 #include "unixsocket.h"
+#include "list.h"
 #include "config.h"
 
-#include <glib.h>
 #include <unistd.h>
 #include <ctype.h>
 #include <dirent.h>
@@ -35,8 +35,10 @@ static pthread_cond_t play_cond;
 static bool play = false; /* true if we are playing */
 
 static bool reset = false;
-static GList *plugins = NULL;
+static struct list_head plugins;
 static struct song *playing = NULL;
+
+static pthread_t playback_thread;
 
 /* Protects "playing" and "reset" variables */
 #define PLAYING_LOCK pthread_mutex_lock(&playing_mutex)
@@ -45,6 +47,11 @@ static struct song *playing = NULL;
 /* Protects "play" variable and play_cond */
 #define PLAY_LOCK pthread_mutex_lock(&play_mutex)
 #define PLAY_UNLOCK pthread_mutex_unlock(&play_mutex)
+
+struct plugin {
+	struct list_head head;
+	struct input_plugin *info;
+};
 
 struct song *get_playing(void)
 {
@@ -56,14 +63,13 @@ struct song *get_playing(void)
 	return song;
 }
 
-struct input_plugin *detect_plugin(const char *filename)
+static struct input_plugin *detect_plugin(const char *filename)
 {
-	GList *iter = plugins;
-	while (iter) {
-		struct input_plugin *plugin = iter->data;
-		if (plugin->detect(filename))
-			return plugin;
-		iter = iter->next;
+	struct list_head *pos;
+	list_for_each(pos, &plugins) {
+		struct plugin *plugin = list_container(pos, struct plugin, head);
+		if (plugin->info->detect(filename))
+			return plugin->info;
 	}
 	warning("no plugin for file %s\n", filename);
 	return NULL;
@@ -84,9 +90,9 @@ static void set_playing(struct song *song)
 		put_song(prev);
 }
 
-static gpointer playback_thread(gpointer ptr)
+static void *playback_thread_routine(void *arg)
 {
-	UNUSED(ptr);
+	UNUSED(arg);
 
 	static sample_t buffer[8192];
 
@@ -335,26 +341,35 @@ void japlay_skip(void)
 static bool load_plugin(const char *filename)
 {
 	void *dl = dlopen(filename, RTLD_NOW);
-	if (!dl)
+	if (dl == NULL)
 		return false;
 
 	struct input_plugin *(*get_info)(void) = dlsym(dl, "get_info");
-	if (!get_info) {
-		dlclose(dl);
-		return false;
+	if (get_info == NULL) {
+		warning("Not a japlay plugin: %s\n", file_base(filename));
+		goto err;
 	}
 
 	struct input_plugin *info = get_info();
 
 	info("found plugin: %s (%s)\n", file_base(filename), info->name);
 
-	plugins = g_list_prepend(plugins, info);
-
+	struct plugin *plugin = NEW(struct plugin);
+	if (plugin == NULL)
+		goto err;
+	plugin->info = info;
+	list_add_tail(&plugin->head, &plugins);
 	return true;
+
+ err:
+	dlclose(dl);
+	return false;
 }
 
 static void load_plugins(void)
 {
+	list_init(&plugins);
+
 	DIR *dir = opendir(PLUGIN_DIR);
 	if (!dir)
 		return;
@@ -459,7 +474,7 @@ int japlay_init(void)
 	pthread_mutex_init(&play_mutex, NULL);
 	pthread_cond_init(&play_cond, NULL);
 
-	g_thread_create(playback_thread, NULL, false, NULL);
+	pthread_create(&playback_thread, NULL, playback_thread_routine, NULL);
 
 	int fd = unix_socket_create(SOCKET_NAME);
 	if (fd >= 0)
