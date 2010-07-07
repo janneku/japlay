@@ -29,15 +29,22 @@
 int debug = 0;
 
 static pthread_mutex_t playing_mutex;
-static GMutex *play_mutex;
-static GCond *play_cond;
-static bool play = false;
+
+static pthread_mutex_t play_mutex;
+static pthread_cond_t play_cond;
+static bool play = false; /* true if we are playing */
+
 static bool reset = false;
 static GList *plugins = NULL;
 static struct song *playing = NULL;
 
+/* Protects "playing" and "reset" variables */
 #define PLAYING_LOCK pthread_mutex_lock(&playing_mutex)
 #define PLAYING_UNLOCK pthread_mutex_unlock(&playing_mutex)
+
+/* Protects "play" variable and play_cond */
+#define PLAY_LOCK pthread_mutex_lock(&play_mutex)
+#define PLAY_UNLOCK pthread_mutex_unlock(&play_mutex)
 
 struct song *get_playing(void)
 {
@@ -104,13 +111,13 @@ static gpointer playback_thread(gpointer ptr)
 		}
 		PLAYING_UNLOCK;
 
-		g_mutex_lock(play_mutex);
+		PLAY_LOCK;
 		if (!play) {
-			g_cond_wait(play_cond, play_mutex);
-			g_mutex_unlock(play_mutex);
+			pthread_cond_wait(&play_cond, &play_mutex);
+			PLAY_UNLOCK;
 			continue;
 		}
-		g_mutex_unlock(play_mutex);
+		PLAY_UNLOCK;
 
 		PLAYING_LOCK;
 		if (reset || !plugin) {
@@ -278,10 +285,10 @@ bool load_playlist_m3u(const char *filename)
 
 static void kick_playback(void)
 {
-	g_mutex_lock(play_mutex);
+	PLAY_LOCK;
 	play = true;
-	g_cond_signal(play_cond);
-	g_mutex_unlock(play_mutex);
+	pthread_cond_signal(&play_cond);
+	PLAY_UNLOCK;
 
 }
 
@@ -449,8 +456,9 @@ int japlay_init(void)
 
 	pthread_mutex_init(&playing_mutex, NULL);
 
-	play_mutex = g_mutex_new();
-	play_cond = g_cond_new();
+	pthread_mutex_init(&play_mutex, NULL);
+	pthread_cond_init(&play_cond, NULL);
+
 	g_thread_create(playback_thread, NULL, false, NULL);
 
 	int fd = unix_socket_create(SOCKET_NAME);
