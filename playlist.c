@@ -6,14 +6,18 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-static GMutex *playlist_mutex;
 static struct list_head playlist;
-static int playlist_len = 0;
+static unsigned int playlist_len = 0;
 
 static pthread_spinlock_t refcountspinlock;
+static pthread_mutex_t playlist_mutex;
 
 #define REF_COUNT_LOCK pthread_spin_lock(&refcountspinlock)
 #define REF_COUNT_UNLOCK pthread_spin_unlock(&refcountspinlock)
+
+#define PLAYLIST_LOCK pthread_mutex_lock(&playlist_mutex)
+#define PLAYLIST_UNLOCK pthread_mutex_unlock(&playlist_mutex)
+
 
 struct song {
 	struct list_head head;
@@ -65,7 +69,7 @@ void put_song(struct song *song)
 
 struct song *playlist_next(struct song *song, bool forward)
 {
-	g_mutex_lock(playlist_mutex);
+	PLAYLIST_LOCK;
 	if (song->head.next) {
 		struct list_head *pos;
 		if (forward)
@@ -75,23 +79,23 @@ struct song *playlist_next(struct song *song, bool forward)
 		if (pos != &playlist) {
 			struct song *song = list_container(pos, struct song, head);
 			get_song(song);
-			g_mutex_unlock(playlist_mutex);
+			PLAYLIST_UNLOCK;
 			return song;
 		}
 	}
-	g_mutex_unlock(playlist_mutex);
+	PLAYLIST_UNLOCK;
 	return NULL;
 }
 
 struct song *get_playlist_first(void)
 {
-	g_mutex_lock(playlist_mutex);
+	PLAYLIST_LOCK;
 	struct song *song = NULL;
 	if (!list_empty(&playlist)) {
 		song = list_container(playlist.next, struct song, head);
 		get_song(song);
 	}
-	g_mutex_unlock(playlist_mutex);
+	PLAYLIST_UNLOCK;
 
 	return song;
 }
@@ -100,21 +104,21 @@ void add_playlist(struct song *song)
 {
 	get_song(song);
 
-	g_mutex_lock(playlist_mutex);
+	PLAYLIST_LOCK;
 	list_add_tail(&song->head, &playlist);
 	ui_add_playlist(song);
 	playlist_len++;
-	g_mutex_unlock(playlist_mutex);
+	PLAYLIST_UNLOCK;
 }
 
 void remove_playlist(struct song *song)
 {
-	g_mutex_lock(playlist_mutex);
+	PLAYLIST_LOCK;
 	list_del(&song->head);
 	playlist_len--;
 	memset(&song->head, 0, sizeof(song->head));
 	ui_remove_playlist(song);
-	g_mutex_unlock(playlist_mutex);
+	PLAYLIST_UNLOCK;
 
 	put_song(song);
 }
@@ -123,7 +127,7 @@ void clear_playlist(void)
 {
 	struct list_head *pos, *next;
 
-	g_mutex_lock(playlist_mutex);
+	PLAYLIST_LOCK;
 	list_for_each_safe(pos, next, &playlist) {
 		struct song *song = list_container(pos, struct song, head);
 		memset(&song->head, 0, sizeof(song->head));
@@ -132,19 +136,19 @@ void clear_playlist(void)
 	}
 	list_init(&playlist);
 	playlist_len = 0;
-	g_mutex_unlock(playlist_mutex);
+	PLAYLIST_UNLOCK;
 }
 
 void shuffle_playlist(void)
 {
 	struct list_head *pos;
 
-	g_mutex_lock(playlist_mutex);
+	PLAYLIST_LOCK;
 	struct song **table = malloc(sizeof(void *) * playlist_len);
-	int len = 0;
+	unsigned int len = 0;
 	list_for_each(pos, &playlist) {
 		struct song *song = list_container(pos, struct song, head);
-		int i = rand() % (len + 1);
+		unsigned int i = rand() % (len + 1);
 		if (i != len)
 			memmove(&table[i + 1], &table[i], (len - i) * sizeof(table[0]));
 		table[i] = song;
@@ -152,14 +156,14 @@ void shuffle_playlist(void)
 		len++;
 	}
 	list_init(&playlist);
-	int i;
+	unsigned int i;
 	for (i = 0; i < playlist_len; ++i) {
 		struct song *song = table[i];
 		list_add_tail(&song->head, &playlist);
 		ui_add_playlist(song);
 	}
 	free(table);
-	g_mutex_unlock(playlist_mutex);
+	PLAYLIST_UNLOCK;
 }
 
 bool save_playlist_m3u(const char *filename)
@@ -170,13 +174,13 @@ bool save_playlist_m3u(const char *filename)
 
 	struct list_head *pos;
 
-	g_mutex_lock(playlist_mutex);
+	PLAYLIST_LOCK;
 	list_for_each(pos, &playlist) {
 		struct song *song = list_container(pos, struct song, head);
 		fputs(song->filename, f);
 		fputc('\n', f);
 	}
-	g_mutex_unlock(playlist_mutex);
+	PLAYLIST_UNLOCK;
 
 	fclose(f);
 	return true;
@@ -185,7 +189,6 @@ bool save_playlist_m3u(const char *filename)
 void init_playlist(void)
 {
 	pthread_spin_init(&refcountspinlock, 0);
+	pthread_mutex_init(&playlist_mutex, NULL);
 	list_init(&playlist);
-
-	playlist_mutex = g_mutex_new();
 }
