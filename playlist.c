@@ -69,6 +69,7 @@ void put_song(struct song *song)
 
 struct song *playlist_next(struct song *song, bool forward)
 {
+	struct song *next = NULL;
 	PLAYLIST_LOCK;
 	if (song->head.next) {
 		struct list_head *pos;
@@ -77,14 +78,12 @@ struct song *playlist_next(struct song *song, bool forward)
 		else
 			pos = song->head.prev;
 		if (pos != &playlist) {
-			struct song *song = list_container(pos, struct song, head);
-			get_song(song);
-			PLAYLIST_UNLOCK;
-			return song;
+			next = list_container(pos, struct song, head);
+			get_song(next);
 		}
 	}
 	PLAYLIST_UNLOCK;
-	return NULL;
+	return next;
 }
 
 struct song *get_playlist_first(void)
