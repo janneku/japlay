@@ -268,14 +268,16 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
 			if (ctx->stream.error == MAD_ERROR_BUFLEN)
 				return 0;
-			printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
+			if (ctx->stream.error != MAD_ERROR_LOSTSYNC)
+				printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
 			continue;
 		}
 
 		if (mad_frame_decode(&ctx->frame, &ctx->stream)) {
 			if (ctx->stream.error == MAD_ERROR_BUFLEN)
 				return 0;
-			printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
+			if (ctx->stream.error != MAD_ERROR_LOSTSYNC)
+				printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
 			continue;
 		}
 
