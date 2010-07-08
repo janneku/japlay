@@ -57,7 +57,12 @@ struct plugin {
 };
 
 struct decode_state {
+	struct song *song;
+	struct input_plugin *plugin;
+	struct input_plugin_ctx *ctx;
+	struct input_format format; /* current audio format */
 	unsigned int position; /* position in milliseconds */
+	unsigned int pos_cnt;
 };
 
 static struct decode_state ds;
@@ -70,6 +75,11 @@ struct song *get_cursor(void)
 		get_song(song);
 	CURSOR_UNLOCK;
 	return song;
+}
+
+void japlay_set_song_length(unsigned int length, bool reliable)
+{
+	set_song_length(ds.song, length, reliable);
 }
 
 unsigned int japlay_get_position(void)
@@ -113,23 +123,23 @@ static void *playback_thread_routine(void *arg)
 	static sample_t buffer[8192];
 
 	ao_device *dev = NULL;
-	struct song *song = NULL;
-	struct input_plugin *plugin = NULL;
-	struct input_plugin_ctx *ctx = NULL;
-	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,};
 	unsigned int power_cnt = 0, power = 0;
-	unsigned int pos_cnt = 0;
+
+	ds.song = NULL;
 	ds.position = 0;
+	ds.pos_cnt = 0;
+	ds.format.rate = 0;
+	ds.format.channels = 0;
 
 	while (!quit) {
 		if (reset) {
 			/* close the current song file */
 			reset = false;
-			if (song) {
-				plugin->close(ctx);
-				free(ctx);
-				put_song(song);
-				song = NULL;
+			if (ds.song) {
+				ds.plugin->close(ds.ctx);
+				free(ds.ctx);
+				put_song(ds.song);
+				ds.song = NULL;
 			}
 		}
 
@@ -143,42 +153,42 @@ static void *playback_thread_routine(void *arg)
 		PLAY_UNLOCK;
 
 		CURSOR_LOCK;
-		if (song == NULL) {
+		if (ds.song == NULL) {
 			/* start a new song */
-			song = cursor;
-			get_song(song);
+			ds.song = cursor;
+			get_song(ds.song);
 			CURSOR_UNLOCK;
 
-			const char *filename = get_song_filename(song);
+			const char *filename = get_song_filename(ds.song);
 
-			plugin = detect_plugin(filename);
-			if (!plugin) {
+			ds.plugin = detect_plugin(filename);
+			if (!ds.plugin) {
 				char *msg = concat_strings("No plugin for file ", filename);
 				if (msg) {
 					ui_show_message(msg);
 					free(msg);
 				}
-				put_song(song);
-				song = NULL;
+				put_song(ds.song);
+				ds.song = NULL;
 				playing = false;
 				continue;
 			}
 
-			ctx = malloc(plugin->ctx_size);
-			if (plugin->open(ctx, filename)) {
+			ds.ctx = malloc(ds.plugin->ctx_size);
+			if (ds.plugin->open(ds.ctx, filename)) {
 				char *msg = concat_strings("Unable to open file ", filename);
 				if (msg) {
 					ui_show_message(msg);
 					free(msg);
 				}
-				free(ctx);
-				put_song(song);
-				song = NULL;
+				free(ds.ctx);
+				put_song(ds.song);
+				ds.song = NULL;
 				playing = false;
 				continue;
 			}
 			ds.position = 0;
-			pos_cnt = 0;
+			ds.pos_cnt = 0;
 		}
 		else
 			CURSOR_UNLOCK;
@@ -191,7 +201,7 @@ static void *playback_thread_routine(void *arg)
 				msecs = 0;
 			newpos.msecs = msecs;
 			toseek = 0;
-			int seekret = plugin->seek(ctx, &newpos);
+			int seekret = ds.plugin->seek(ds.ctx, &newpos);
 			if (seekret < 0) {
 				error("Seek error\n");
 				skipsong = 1;
@@ -200,23 +210,21 @@ static void *playback_thread_routine(void *arg)
 			} else {
 				info("Seeking to %ld.%.1lds\n", newpos.msecs / 1000, (newpos.msecs % 1000) / 100);
 				ds.position = newpos.msecs;
-				pos_cnt = 0;
+				ds.pos_cnt = 0;
 			}
 		}
 
 		struct input_format iformat = {.rate = 0,};
 		size_t len = 0;
 		if (!skipsong)
-			len = plugin->fillbuf(ctx, buffer, sizeof(buffer) / sizeof(sample_t), &iformat);
+			len = ds.plugin->fillbuf(ds.ctx, buffer, sizeof(buffer) / sizeof(sample_t), &iformat);
 		if (!len) {
-			/* EOF or decode error, update song length */
-			set_song_length(song, ds.position);
 			reset = true;
 
 			/* if we are still playing the same song, go to next one */
 			CURSOR_LOCK;
-			if (song == cursor) {
-				struct song *next = playlist_next(song, true);
+			if (ds.song == cursor) {
+				struct song *next = playlist_next(ds.song, true);
 				if (next) {
 					set_cursor_locked(next);
 					put_song(next);
@@ -229,17 +237,18 @@ static void *playback_thread_routine(void *arg)
 			continue;
 		}
 
-		if (iformat.rate != (unsigned int) format.rate ||
-		    iformat.channels != (unsigned int) format.channels || !dev) {
+		if (iformat.rate != ds.format.rate || iformat.channels != ds.format.channels || !dev) {
+			/* format changed or device is not open */
 			if (dev)
 				ao_close(dev);
 			info("format change: %u Hz, %u channels\n",
 				iformat.rate, iformat.channels);
-			format.rate = iformat.rate;
-			format.channels = iformat.channels;
+			ds.format = iformat;
+			ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,
+				.rate = ds.format.rate, .channels = ds.format.channels};
 			power_cnt = 0;
 			power = 0;
-			pos_cnt = 0;
+			ds.pos_cnt = 0;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
 				ui_show_message("Unable to open audio device");
@@ -252,17 +261,17 @@ static void *playback_thread_routine(void *arg)
 		for (i = power_cnt & 31; i < len; i += 32)
 			power += abs(buffer[i]) / 256;
 
-		unsigned int samplerate = format.rate * format.channels;
-		pos_cnt += len;
+		unsigned int samplerate = ds.format.rate * ds.format.channels;
+		ds.pos_cnt += len;
 
 		/* advance song position with full milliseconds from pos_cnt */
-		unsigned int adv = pos_cnt * 1000 / samplerate;
+		unsigned int adv = ds.pos_cnt * 1000 / samplerate;
 		ds.position += adv;
-		pos_cnt -= adv * samplerate / 1000;
+		ds.pos_cnt -= adv * samplerate / 1000;
 
 		/* Update UI status every 16 times per second */
 		power_cnt += len;
-		if (power_cnt >= (unsigned int) format.rate * format.channels / 16) {
+		if (power_cnt >= (unsigned int) samplerate / 16) {
 			ui_set_status(power * 64 / power_cnt, ds.position);
 			power_cnt = 0;
 			power = 0;

@@ -52,4 +52,8 @@ struct input_plugin *get_info();
 /* Call this to get current position in milliseconds */
 unsigned int japlay_get_position(void);
 
+/* Update song length in the playlist. Reliable if false if the length is
+   an estimate. */
+void japlay_set_song_length(unsigned int length, bool reliable);
+
 #endif

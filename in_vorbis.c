@@ -8,6 +8,7 @@
 
 struct input_plugin_ctx {
 	OggVorbis_File vf;
+	bool reliable;
 };
 
 static const char *file_ext(const char *filename)
@@ -37,6 +38,8 @@ static int vorbis_open(struct input_plugin_ctx *ctx, const char *filename)
 		return -1;
 	}
 
+	ctx->reliable = false;
+
 	return 0;
 }
 
@@ -55,8 +58,10 @@ static size_t vorbis_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		if (n == OV_HOLE)
 			continue;
 
-		if (n <= 0)
+		if (n <= 0) {
+			japlay_set_song_length(japlay_get_position(), ctx->reliable);
 			return 0;
+		}
 
 		vorbis_info *vi = ov_info(&ctx->vf, -1);
 		format->rate = vi->rate;
@@ -75,6 +80,7 @@ static int vorbis_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 		warning("ov_time_seek() error: %d\n", ret);
 		return -1;
 	}
+	ctx->reliable = (newpos->msecs == 0);
 	return 1;
 }
 
