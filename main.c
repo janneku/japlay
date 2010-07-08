@@ -28,25 +28,25 @@
 
 int debug = 0;
 
-static pthread_mutex_t playing_mutex;
+static pthread_mutex_t cursor_mutex;
 
 static pthread_mutex_t play_mutex;
 static pthread_cond_t play_cond;
-static bool play = false; /* true if we are playing */
+static bool playing = false; /* true if we are cursor */
 
 static bool reset = false;
 static struct list_head plugins;
-static struct song *playing = NULL;
+static struct song *cursor = NULL;
 
 static pthread_t playback_thread;
 
 static long toseek = 0;
 
-/* Protects "playing" and "reset" variables */
-#define PLAYING_LOCK pthread_mutex_lock(&playing_mutex)
-#define PLAYING_UNLOCK pthread_mutex_unlock(&playing_mutex)
+/* Protects "cursor" */
+#define CURSOR_LOCK pthread_mutex_lock(&cursor_mutex)
+#define CURSOR_UNLOCK pthread_mutex_unlock(&cursor_mutex)
 
-/* Protects "play" variable and play_cond */
+/* Protects "playing" variable and play_cond */
 #define PLAY_LOCK pthread_mutex_lock(&play_mutex)
 #define PLAY_UNLOCK pthread_mutex_unlock(&play_mutex)
 
@@ -55,13 +55,13 @@ struct plugin {
 	struct input_plugin *info;
 };
 
-struct song *get_playing(void)
+struct song *get_cursor(void)
 {
-	PLAYING_LOCK;
-	struct song *song = playing;
+	CURSOR_LOCK;
+	struct song *song = cursor;
 	if (song)
 		get_song(song);
-	PLAYING_UNLOCK;
+	CURSOR_UNLOCK;
 	return song;
 }
 
@@ -77,19 +77,21 @@ static struct input_plugin *detect_plugin(const char *filename)
 	return NULL;
 }
 
-static void set_playing(struct song *song)
+static void set_cursor_locked(struct song *song)
 {
 	get_song(song);
-
-	PLAYING_LOCK;
-	struct song *prev = playing;
-	playing = song;
+	ui_set_cursor(cursor, song);
+	if (cursor)
+		put_song(cursor);
+	cursor = song;
 	reset = true;
-	ui_set_playing(prev, playing);
-	PLAYING_UNLOCK;
+}
 
-	if (prev)
-		put_song(prev);
+static void set_cursor(struct song *song)
+{
+	CURSOR_LOCK;
+	set_cursor_locked(song);
+	CURSOR_UNLOCK;
 }
 
 static void *playback_thread_routine(void *arg)
@@ -99,6 +101,7 @@ static void *playback_thread_routine(void *arg)
 	static sample_t buffer[8192];
 
 	ao_device *dev = NULL;
+	struct song *song = NULL;
 	struct input_plugin *plugin = NULL;
 	struct input_plugin_ctx *ctx = NULL;
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,};
@@ -106,59 +109,56 @@ static void *playback_thread_routine(void *arg)
 	unsigned int position = 0, pos_cnt = 0;
 
 	while (true) {
-		PLAYING_LOCK;
 		if (reset) {
+			/* close the current song file */
 			reset = false;
-			PLAYING_UNLOCK;
-
-			if (plugin) {
+			if (song) {
 				plugin->close(ctx);
 				free(ctx);
+				put_song(song);
+				song = NULL;
 			}
-			plugin = NULL;
 		}
-		PLAYING_UNLOCK;
 
 		PLAY_LOCK;
-		if (!play) {
+		if (!playing) {
+			/* we are not currently playing, sleep */
 			pthread_cond_wait(&play_cond, &play_mutex);
 			PLAY_UNLOCK;
 			continue;
 		}
 		PLAY_UNLOCK;
 
-		PLAYING_LOCK;
-		if (reset || !plugin) {
-			struct song *song = playing;
+		CURSOR_LOCK;
+		if (song == NULL) {
+			/* start a new song */
+			song = cursor;
 			get_song(song);
-			PLAYING_UNLOCK;
-
-			if (plugin) {
-				plugin->close(ctx);
-				free(ctx);
-			}
+			CURSOR_UNLOCK;
 
 			plugin = detect_plugin(get_song_filename(song));
 			if (!plugin) {
 				put_song(song);
-				play = false;
+				song = NULL;
+				/* unable to open the file, stop */
+				playing = false;
 				continue;
 			}
 
 			ctx = malloc(plugin->ctx_size);
 			if (plugin->open(ctx, get_song_filename(song))) {
-				put_song(song);
 				free(ctx);
-				plugin = NULL;
-				play = false;
+				put_song(song);
+				song = NULL;
+				/* unable to open the file, stop */
+				playing = false;
 				continue;
 			}
-			put_song(song);
 			position = 0;
 			pos_cnt = 0;
 		}
 		else
-			PLAYING_UNLOCK;
+			CURSOR_UNLOCK;
 
 		int skipsong = 0;
 		if (toseek) {
@@ -187,14 +187,23 @@ static void *playback_thread_routine(void *arg)
 		if (!skipsong)
 			len = plugin->fillbuf(ctx, buffer, sizeof(buffer) / sizeof(sample_t), &iformat);
 		if (!len) {
-			struct song *song = get_playing();
-			struct song *next = playlist_next(song, true);
-			put_song(song);
-			if (next) {
-				set_playing(next);
-				put_song(next);
-			} else
-				play = false;
+			/* EOF or decode error, update song length */
+			set_song_length(song, position);
+			reset = true;
+
+			/* if we are still playing the same song, go to next one */
+			CURSOR_LOCK;
+			if (song == cursor) {
+				struct song *next = playlist_next(song, true);
+				if (next) {
+					set_cursor_locked(next);
+					put_song(next);
+				} else {
+					/* end of playlist, stop */
+					playing = false;
+				}
+			}
+			CURSOR_UNLOCK;
 			continue;
 		}
 
@@ -212,7 +221,7 @@ static void *playback_thread_routine(void *arg)
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
 				warning("Unable to open audio device\n");
-				play = false;
+				playing = false;
 				continue;
 			}
 		}
@@ -317,27 +326,30 @@ bool load_playlist_m3u(const char *filename)
 static void kick_playback(void)
 {
 	PLAY_LOCK;
-	play = true;
+	playing = true;
 	pthread_cond_signal(&play_cond);
 	PLAY_UNLOCK;
-
 }
 
 void play_playlist(struct song *song)
 {
-	set_playing(song);
+	set_cursor(song);
 	kick_playback();
 }
 
 void japlay_play(void)
 {
-	if (!playing) {
+	CURSOR_LOCK;
+	if (cursor == NULL) {
 		struct song *song = get_playlist_first();
-		if (!song)
-		    return;
-		set_playing(song);
+		if (song == NULL) {
+			CURSOR_UNLOCK;
+			return;
+		}
+		set_cursor_locked(song);
 		put_song(song);
 	}
+	CURSOR_UNLOCK;
 	kick_playback();
 }
 
@@ -349,21 +361,21 @@ void japlay_seek_relative(long msecs)
 void japlay_stop(void)
 {
 	reset = true;
-	play = false;
+	playing = false;
 }
 
 void japlay_pause(void)
 {
-	play = false;
+	playing = false;
 }
 
 void japlay_skip(void)
 {
-	struct song *song = get_playing();
+	struct song *song = get_cursor();
 	struct song *next = playlist_next(song, true);
 	put_song(song);
 	if (next) {
-		set_playing(next);
+		set_cursor(next);
 		put_song(next);
 	}
 }
@@ -523,7 +535,7 @@ int japlay_init(int *argc, char **argv)
 	init_playlist();
 	iowatch_init();
 
-	pthread_mutex_init(&playing_mutex, NULL);
+	pthread_mutex_init(&cursor_mutex, NULL);
 
 	pthread_mutex_init(&play_mutex, NULL);
 	pthread_cond_init(&play_cond, NULL);

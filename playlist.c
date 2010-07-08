@@ -18,10 +18,9 @@ static pthread_mutex_t playlist_mutex;
 #define PLAYLIST_LOCK pthread_mutex_lock(&playlist_mutex)
 #define PLAYLIST_UNLOCK pthread_mutex_unlock(&playlist_mutex)
 
-
 struct song {
 	struct list_head head;
-	unsigned int refcount;
+	unsigned int refcount, length;
 	char *filename;
 	struct song_ui_ctx *ui_ctx;
 };
@@ -34,6 +33,11 @@ struct song_ui_ctx *get_song_ui_ctx(struct song *song)
 const char *get_song_filename(struct song *song)
 {
 	return song->filename;
+}
+
+unsigned int get_song_length(struct song *song)
+{
+	return song->length;
 }
 
 struct song *new_song(const char *filename)
@@ -65,6 +69,12 @@ void put_song(struct song *song)
 		free(song);
 	}
 	REF_COUNT_UNLOCK;
+}
+
+void set_song_length(struct song *song, unsigned int length)
+{
+	song->length = length;
+	ui_update_playlist(song);
 }
 
 struct song *playlist_next(struct song *song, bool forward)

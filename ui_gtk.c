@@ -17,6 +17,7 @@
 enum {
 	COL_ENTRY,
 	COL_NAME,
+	COL_LENGTH,
 	COL_COLOR,
 	NUM_COLS
 };
@@ -58,12 +59,13 @@ static const char *file_ext(const char *filename)
 	return NULL;
 }
 
+/* UI lock must be held */
 static void set_playlist_color(struct song *song, const char *color)
 {
 	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
-
 	if (!ctx->rowref)
 		return;
+
 	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
 
 	GtkTreeIter iter;
@@ -90,8 +92,11 @@ void ui_add_playlist(struct song *song)
 	GtkTreeIter iter;
 	gtk_list_store_append(playlist_store, &iter);
 	char *name = get_display_name(song);
+	char buf[32];
+	sprintf(buf, "%d:%02d", get_song_length(song) / (1000 * 60),
+		(get_song_length(song) / 1000) % 60);
 	gtk_list_store_set(playlist_store, &iter, COL_ENTRY, song,
-		COL_NAME, name, COL_COLOR, NULL, -1);
+		COL_NAME, name, COL_LENGTH, buf, COL_COLOR, NULL, -1);
 	free(name);
 
 	/* store row reference */
@@ -107,7 +112,6 @@ void ui_remove_playlist(struct song *song)
 
 	lock_ui();
 	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
-	gtk_tree_row_reference_free(ctx->rowref);
 
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
@@ -119,7 +123,31 @@ void ui_remove_playlist(struct song *song)
 	ctx->rowref = NULL;
 }
 
-void ui_set_playing(struct song *prev, struct song *song)
+void ui_update_playlist(struct song *song)
+{
+	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+	if (!ctx->rowref)
+		return;
+
+	lock_ui();
+	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
+	gtk_tree_row_reference_free(ctx->rowref);
+
+	GtkTreeIter iter;
+	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
+	gtk_tree_path_free(path);
+
+	char *name = get_display_name(song);
+	char buf[32];
+	sprintf(buf, "%d:%02d", get_song_length(song) / (1000 * 60),
+		(get_song_length(song) / 1000) % 60);
+	gtk_list_store_set(playlist_store, &iter,
+		COL_NAME, name, COL_LENGTH, buf, -1);
+	free(name);
+	unlock_ui();
+}
+
+void ui_set_cursor(struct song *prev, struct song *song)
 {
 	lock_ui();
 	if (prev)
@@ -360,7 +388,8 @@ int main(int argc, char **argv)
 	g_signal_connect(G_OBJECT(main_window), "destroy", G_CALLBACK(destroy_cb), NULL);
 	g_signal_connect(G_OBJECT(main_window), "key-press-event", G_CALLBACK(key_pressed_cb), NULL);
 
-	playlist_store = gtk_list_store_new(NUM_COLS, G_TYPE_POINTER, G_TYPE_STRING, G_TYPE_STRING);
+	playlist_store = gtk_list_store_new(NUM_COLS, G_TYPE_POINTER,
+		G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
 
 	GtkWidget *menubar = gtk_menu_bar_new();
 
@@ -416,7 +445,13 @@ int main(int argc, char **argv)
 
 	GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
 	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(playlist_view),
-		-1, "Name", renderer, "text", COL_NAME, "foreground", COL_COLOR, NULL);
+		-1, "Name", renderer, "text", COL_NAME,
+		"foreground", COL_COLOR, NULL);
+
+	renderer = gtk_cell_renderer_text_new();
+	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(playlist_view),
+		-1, "Length", renderer, "text", COL_LENGTH,
+		"foreground", COL_COLOR, NULL);
 
 	GtkWidget *scrollwin = gtk_scrolled_window_new(NULL, NULL);
 	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrollwin),

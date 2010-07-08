@@ -6,7 +6,7 @@
 struct song;
 struct input_plugin;
 
-struct song *get_playing(void);
+struct song *get_cursor(void);
 
 void add_file_playlist(const char *filename);
 
