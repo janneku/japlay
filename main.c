@@ -307,7 +307,6 @@ bool load_playlist_pls(const char *filename)
 
 	char row[512];
 	while (fgets(row, sizeof(row), f)) {
-		size_t i;
 		char *value = strchr(row, '=');
 		if (value == NULL)
 			continue;
