@@ -31,7 +31,7 @@ ui_gtk.o:	ui_gtk.c
 	$(CC) $(CFLAGS) -c $<
 
 $(GTK_BINARY):	$(OBJ) ui_gtk.o
-	$(CC) $(OBJ) ui_gtk.o -o $@ $(LDFLAGS) `pkg-config gtk+-2.0 --libs`
+	$(CC) $(OBJ) ui_gtk.o -o $@ $(LDFLAGS) -Wl,-E `pkg-config gtk+-2.0 --libs`
 
 install:	$(GTK_BINARY) $(PLUGINS)
 	install -m 755 japlay $(DESTDIR)$(PREFIX)/bin
