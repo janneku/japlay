@@ -35,6 +35,8 @@ static pthread_cond_t play_cond;
 static bool playing = false; /* true if we are cursor */
 
 static bool reset = false;
+static bool quit = false;
+
 static struct list_head plugins;
 static struct song *cursor = NULL;
 
@@ -108,7 +110,7 @@ static void *playback_thread_routine(void *arg)
 	unsigned int power_cnt = 0, power = 0;
 	unsigned int position = 0, pos_cnt = 0;
 
-	while (true) {
+	while (!quit) {
 		if (reset) {
 			/* close the current song file */
 			reset = false;
@@ -551,5 +553,10 @@ int japlay_init(int *argc, char **argv)
 
 void japlay_exit(void)
 {
+	quit = true;
+	void *retval;
+	kick_playback();
+	pthread_join(playback_thread, &retval);
+
 	unlink(SOCKET_NAME);
 }
