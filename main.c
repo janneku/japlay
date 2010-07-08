@@ -116,6 +116,38 @@ static void set_cursor(struct song *song)
 	CURSOR_UNLOCK;
 }
 
+static int init_decode(struct decode_state *ds, struct song *song)
+{
+	const char *filename = get_song_filename(song);
+
+	ds->plugin = detect_plugin(filename);
+	if (ds->plugin == NULL)
+		return -1;
+
+	ds->ctx = calloc(1, ds->plugin->ctx_size);
+	if (ds->ctx == NULL)
+		return -1;
+
+	if (ds->plugin->open(ds->ctx, filename)) {
+		free(ds->ctx);
+		return -1;
+	}
+	get_song(song);
+	ds->song = song;
+	ds->position = 0;
+	ds->pos_cnt = 0;
+	ds->format.rate = 0;
+	ds->format.channels = 0;
+	return 0;
+}
+
+static void finish_decode(struct decode_state *ds)
+{
+	ds->plugin->close(ds->ctx);
+	free(ds->ctx);
+	put_song(ds->song);
+}
+
 static void *playback_thread_routine(void *arg)
 {
 	UNUSED(arg);
@@ -123,22 +155,18 @@ static void *playback_thread_routine(void *arg)
 	static sample_t buffer[8192];
 
 	ao_device *dev = NULL;
+	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,
+			.rate = 0, .channels = 0};
 	unsigned int power_cnt = 0, power = 0;
 
 	ds.song = NULL;
-	ds.position = 0;
-	ds.pos_cnt = 0;
-	ds.format.rate = 0;
-	ds.format.channels = 0;
 
 	while (!quit) {
 		if (reset) {
 			/* close the current song file */
 			reset = false;
 			if (ds.song) {
-				ds.plugin->close(ds.ctx);
-				free(ds.ctx);
-				put_song(ds.song);
+				finish_decode(&ds);
 				ds.song = NULL;
 			}
 		}
@@ -155,40 +183,22 @@ static void *playback_thread_routine(void *arg)
 		CURSOR_LOCK;
 		if (ds.song == NULL) {
 			/* start a new song */
-			ds.song = cursor;
-			get_song(ds.song);
+			struct song *song = cursor;
+			get_song(song);
 			CURSOR_UNLOCK;
 
-			const char *filename = get_song_filename(ds.song);
-
-			ds.plugin = detect_plugin(filename);
-			if (!ds.plugin) {
-				char *msg = concat_strings("No plugin for file ", filename);
+			if (init_decode(&ds, song)) {
+				char *msg = concat_strings("No plugin for file ",
+					get_song_filename(song));
 				if (msg) {
 					ui_show_message(msg);
 					free(msg);
 				}
-				put_song(ds.song);
-				ds.song = NULL;
+				put_song(song);
 				playing = false;
 				continue;
 			}
-
-			ds.ctx = malloc(ds.plugin->ctx_size);
-			if (ds.plugin->open(ds.ctx, filename)) {
-				char *msg = concat_strings("Unable to open file ", filename);
-				if (msg) {
-					ui_show_message(msg);
-					free(msg);
-				}
-				free(ds.ctx);
-				put_song(ds.song);
-				ds.song = NULL;
-				playing = false;
-				continue;
-			}
-			ds.position = 0;
-			ds.pos_cnt = 0;
+			put_song(song);
 		}
 		else
 			CURSOR_UNLOCK;
@@ -214,10 +224,9 @@ static void *playback_thread_routine(void *arg)
 			}
 		}
 
-		struct input_format iformat = {.rate = 0,};
 		size_t len = 0;
 		if (!skipsong)
-			len = ds.plugin->fillbuf(ds.ctx, buffer, sizeof(buffer) / sizeof(sample_t), &iformat);
+			len = ds.plugin->fillbuf(ds.ctx, buffer, sizeof(buffer) / sizeof(sample_t), &ds.format);
 		if (!len) {
 			reset = true;
 
@@ -237,15 +246,15 @@ static void *playback_thread_routine(void *arg)
 			continue;
 		}
 
-		if (iformat.rate != ds.format.rate || iformat.channels != ds.format.channels || !dev) {
+		if (ds.format.rate != (unsigned int) format.rate ||
+		    ds.format.channels != (unsigned int) format.channels || !dev) {
 			/* format changed or device is not open */
 			if (dev)
 				ao_close(dev);
 			info("format change: %u Hz, %u channels\n",
-				iformat.rate, iformat.channels);
-			ds.format = iformat;
-			ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,
-				.rate = ds.format.rate, .channels = ds.format.channels};
+				ds.format.rate, ds.format.channels);
+			format.rate = ds.format.rate;
+			format.channels = ds.format.channels;
 			power_cnt = 0;
 			power = 0;
 			ds.pos_cnt = 0;
@@ -269,7 +278,7 @@ static void *playback_thread_routine(void *arg)
 		ds.position += adv;
 		ds.pos_cnt -= adv * samplerate / 1000;
 
-		/* Update UI status every 16 times per second */
+		/* Update UI status 16 times per second */
 		power_cnt += len;
 		if (power_cnt >= (unsigned int) samplerate / 16) {
 			ui_set_status(power * 64 / power_cnt, ds.position);
