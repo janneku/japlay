@@ -20,6 +20,7 @@ static pthread_mutex_t playlist_mutex;
 
 struct song {
 	struct list_head head;
+	bool reliable_length;
 	unsigned int refcount, length;
 	char *filename;
 	struct song_ui_ctx *ui_ctx;
@@ -47,6 +48,7 @@ struct song *new_song(const char *filename)
 		return NULL;
 	song->filename = strdup(filename);
 	song->refcount = 1;
+	song->length = (unsigned int) -1;
 	song->ui_ctx = malloc(ui_song_ctx_size);
 
 	return song;
@@ -71,10 +73,13 @@ void put_song(struct song *song)
 	REF_COUNT_UNLOCK;
 }
 
-void set_song_length(struct song *song, unsigned int length)
+void set_song_length(struct song *song, unsigned int length, bool reliable)
 {
-	song->length = length;
-	ui_update_playlist(song);
+	if (reliable || !song->reliable_length) {
+		song->length = length;
+		song->reliable_length = reliable;
+		ui_update_playlist(song);
+	}
 }
 
 struct song *playlist_next(struct song *song, bool forward)

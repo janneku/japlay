@@ -77,6 +77,11 @@ struct song *get_cursor(void)
 	return song;
 }
 
+void japlay_set_song_length(unsigned int length, bool reliable)
+{
+	set_song_length(ds.song, length, reliable);
+}
+
 unsigned int japlay_get_position(void)
 {
 	return ds.position;
@@ -214,8 +219,6 @@ static void *playback_thread_routine(void *arg)
 		if (!skipsong)
 			len = ds.plugin->fillbuf(ds.ctx, buffer, sizeof(buffer) / sizeof(sample_t), &iformat);
 		if (!len) {
-			/* EOF or decode error, update song length */
-			set_song_length(ds.song, ds.position);
 			reset = true;
 
 			/* if we are still playing the same song, go to next one */

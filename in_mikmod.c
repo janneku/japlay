@@ -121,8 +121,10 @@ static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 {
 	UNUSED(ctx);
 
-	if (!Player_Active())
+	if (!Player_Active()) {
+		japlay_set_song_length(japlay_get_position(), true);
 		return 0;
+	}
 
 	format->channels = 2;
 	format->rate = 44100;

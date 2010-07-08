@@ -14,7 +14,7 @@ unsigned int get_song_length(struct song *song);
 struct song *new_song(const char *filename);
 void get_song(struct song *song);
 void put_song(struct song *song);
-void set_song_length(struct song *song, unsigned int length);
+void set_song_length(struct song *song, unsigned int length, bool reliable);
 struct song *playlist_next(struct song *song, bool forward);
 struct song *get_playlist_first(void);
 void add_playlist(struct song *song);
