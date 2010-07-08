@@ -38,7 +38,7 @@ static int vorbis_open(struct input_plugin_ctx *ctx, const char *filename)
 		return -1;
 	}
 
-	ctx->reliable = false;
+	ctx->reliable = true;
 
 	return 0;
 }
