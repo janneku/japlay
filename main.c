@@ -72,7 +72,7 @@ struct song *get_cursor(void)
 	return song;
 }
 
-static unsigned int get_position(void)
+unsigned int japlay_get_position(void)
 {
 	return ds.position;
 }
@@ -425,8 +425,6 @@ static bool load_plugin(const char *filename)
 
 	if (info->seek == NULL)
 		info->seek = dummy_seek;
-
-	info->get_position = get_position;
 
 	info("found plugin: %s (%s)\n", file_base(filename), info->name);
 

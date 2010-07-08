@@ -30,8 +30,6 @@ struct input_plugin_ctx {
 	size_t nseconds;
 };
 
-static struct input_plugin *plugin;
-
 #define DEFAULT_BYTE_RATE (128000 / 8)
 #define MAX_SECS (365 * 24 * 3600)     /* a year :-) */
 
@@ -305,7 +303,7 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 				buffer[i] = scale(ctx->synth.pcm.samples[0][i]);
 		}
 
-		t = plugin->get_position() / 1000;
+		t = japlay_get_position() / 1000;
 		if (!recall(ctx, t))
 			remember(ctx, offs, t);
 		return len;
@@ -318,7 +316,7 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	size_t curt;
 	size_t t = newpos->msecs / 1000;
 
-	curt = plugin->get_position() / 1000;
+	curt = japlay_get_position() / 1000;
 	if (t == curt)
 		return 1;
 
@@ -350,6 +348,5 @@ static struct input_plugin plugin_info = {
 
 struct input_plugin *get_info()
 {
-	plugin = &plugin_info;
-	return plugin;
+	return &plugin_info;
 }
