@@ -235,6 +235,18 @@ static sample_t scale(mad_fixed_t sample)
 	return sample >> (MAD_F_FRACBITS + 1 - 16);
 }
 
+static void print_mad_error(const struct mad_stream *stream)
+{
+	switch (stream->error) {
+	case MAD_ERROR_LOSTSYNC:
+	case MAD_ERROR_BADDATAPTR:
+		break;
+	default:
+		printf("MAD error: %s\n", mad_stream_errorstr(stream));
+		break;
+	}
+}
+
 static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			  size_t maxlen, struct input_format *format)
 {
@@ -266,16 +278,14 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
 			if (ctx->stream.error == MAD_ERROR_BUFLEN)
 				return 0;
-			if (ctx->stream.error != MAD_ERROR_LOSTSYNC)
-				printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
+			print_mad_error(&ctx->stream);
 			continue;
 		}
 
 		if (mad_frame_decode(&ctx->frame, &ctx->stream)) {
 			if (ctx->stream.error == MAD_ERROR_BUFLEN)
 				return 0;
-			if (ctx->stream.error != MAD_ERROR_LOSTSYNC)
-				printf("MAD error: %s\n", mad_stream_errorstr(&ctx->stream));
+			print_mad_error(&ctx->stream);
 			continue;
 		}
 
