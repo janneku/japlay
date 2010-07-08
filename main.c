@@ -37,6 +37,13 @@ static struct song *playing = NULL;
 
 static long toseek = 0;
 
+struct decode_state {
+	unsigned int position; /* position in milliseconds */
+};
+
+static struct decode_state ds;
+
+
 struct song *get_playing(void)
 {
 	g_mutex_lock(playing_mutex);
@@ -45,6 +52,11 @@ struct song *get_playing(void)
 		get_song(song);
 	g_mutex_unlock(playing_mutex);
 	return song;
+}
+
+static unsigned int get_position(void)
+{
+	return ds.position;
 }
 
 struct input_plugin *detect_plugin(const char *filename)
@@ -86,7 +98,8 @@ static gpointer playback_thread(gpointer ptr)
 	struct input_plugin_ctx *ctx = NULL;
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,};
 	unsigned int power_cnt = 0, power = 0;
-	unsigned int position = 0, pos_cnt = 0;
+	unsigned int pos_cnt = 0;
+	ds.position = 0;
 
 	while (true) {
 		g_mutex_lock(playing_mutex);
@@ -137,7 +150,7 @@ static gpointer playback_thread(gpointer ptr)
 				continue;
 			}
 			put_song(song);
-			position = 0;
+			ds.position = 0;
 			pos_cnt = 0;
 		}
 		else
@@ -145,14 +158,13 @@ static gpointer playback_thread(gpointer ptr)
 
 		int skipsong = 0;
 		if (toseek) {
-			struct songpos curpos = {.msecs = position};
-			struct songpos newpos = curpos;
-			long msecs = curpos.msecs + toseek;
+			struct songpos newpos = {.msecs = ds.position};
+			long msecs = newpos.msecs + toseek;
 			if (msecs < 0)
 				msecs = 0;
 			newpos.msecs = msecs;
 			toseek = 0;
-			int seekret = plugin->seek(ctx, &curpos, &newpos);
+			int seekret = plugin->seek(ctx, &newpos);
 			if (seekret < 0) {
 				error("Seek error\n");
 				skipsong = 1;
@@ -160,7 +172,7 @@ static gpointer playback_thread(gpointer ptr)
 				warning("Seek not supported\n");
 			} else {
 				info("Seeking to %ld.%.1lds\n", newpos.msecs / 1000, (newpos.msecs % 1000) / 100);
-				position = newpos.msecs;
+				ds.position = newpos.msecs;
 				pos_cnt = 0;
 			}
 		}
@@ -209,13 +221,13 @@ static gpointer playback_thread(gpointer ptr)
 
 		/* advance song position with full milliseconds from pos_cnt */
 		unsigned int adv = pos_cnt * 1000 / samplerate;
-		position += adv;
+		ds.position += adv;
 		pos_cnt -= adv * samplerate / 1000;
 
 		/* Update UI status every 16 times per second */
 		power_cnt += len;
 		if (power_cnt >= (unsigned int) format.rate * format.channels / 16) {
-			ui_set_status(power * 64 / power_cnt, position);
+			ui_set_status(power * 64 / power_cnt, ds.position);
 			power_cnt = 0;
 			power = 0;
 		}
@@ -355,11 +367,9 @@ void japlay_skip(void)
 }
 
 static int dummy_seek(struct input_plugin_ctx *ctx,
-		      const struct songpos *curpos,
 		      struct songpos *newpos)
 {
 	UNUSED(ctx);
-	UNUSED(curpos);
 	UNUSED(newpos);
 	return 0;
 }
@@ -380,6 +390,8 @@ static bool load_plugin(const char *filename)
 
 	if (info->seek == NULL)
 		info->seek = dummy_seek;
+
+	info->get_position = get_position;
 
 	info("found plugin: %s (%s)\n", file_base(filename), info->name);
 

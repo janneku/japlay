@@ -131,7 +131,7 @@ static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		/ sizeof(sample_t);
 }
 
-static const struct input_plugin plugin_info = {
+static struct input_plugin plugin_info = {
 	.size = sizeof(struct input_plugin),
 	.ctx_size = sizeof(struct input_plugin_ctx),
 	.name = "MikMod module player",
@@ -141,7 +141,7 @@ static const struct input_plugin plugin_info = {
 	.fillbuf = mikmod_fillbuf,
 };
 
-const struct input_plugin *get_info()
+struct input_plugin *get_info()
 {
 	return &plugin_info;
 }
