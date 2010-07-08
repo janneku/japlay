@@ -146,7 +146,7 @@ static void *playback_thread_routine(void *arg)
 			}
 
 			ctx = malloc(plugin->ctx_size);
-			if (!plugin->open(ctx, get_song_filename(song))) {
+			if (plugin->open(ctx, get_song_filename(song))) {
 				put_song(song);
 				free(ctx);
 				plugin = NULL;

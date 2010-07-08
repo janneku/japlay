@@ -26,18 +26,18 @@ static bool vorbis_detect(const char *filename)
 	return ext && !strcasecmp(ext, "ogg");
 }
 
-static bool vorbis_open(struct input_plugin_ctx *ctx, const char *filename)
+static int vorbis_open(struct input_plugin_ctx *ctx, const char *filename)
 {
 	FILE *f = fopen(filename, "rb");
 	if (!f)
-		return false;
+		return -1;
 
 	if (ov_open(f, &ctx->vf, NULL, 0)) {
 		fclose(f);
-		return false;
+		return -1;
 	}
 
-	return true;
+	return 0;
 }
 
 static void vorbis_close(struct input_plugin_ctx *ctx)

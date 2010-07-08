@@ -86,7 +86,7 @@ static MDRIVER drv_dummy = {
 	VC_VoiceRealVolume
 };
 
-static bool mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
+static int mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
 {
 	if (!mikmod_init) {
 		mikmod_init = true;
@@ -102,12 +102,12 @@ static bool mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
 	ctx->mf = Player_Load((char *)filename, 128, true);
 	if (!ctx->mf) {
 		printf("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
-		return false;
+		return -1;
 	}
 
 	Player_Start(ctx->mf);
 
-	return true;
+	return 0;
 }
 
 static void mikmod_close(struct input_plugin_ctx *ctx)

@@ -26,24 +26,22 @@ struct input_plugin {
 	/* Check if the plugin can handle the given file */
 	bool (*detect)(const char *filename);
 
-	/* Try to open the given file and initialize the plugin. Should
-	   return a pointer to internal decoder context for the file.
-	   Returns NULL in case of a failure. */
-	bool (*open)(struct input_plugin_ctx *ctx, const char *filename);
+	/* Try to open the given song file. Context is allocated by the caller.
+	   Return -1 if unable to open the file. */
+	int (*open)(struct input_plugin_ctx *ctx, const char *filename);
 
-	/* Called when file is closed. Should free memory allocated
-	   for the file context. */
+	/* Called when file is closed. Context is allocated by the caller */
 	void (*close)(struct input_plugin_ctx *ctx);
 
-	/* Fill given buffer with decoded audio data. Should return the
+	/* Fill given buffer with audio samples. Should return the
 	   number of samples written to the buffer, and fill all fields
-	   of the format structure. */
-	size_t (*fillbuf)(struct input_plugin_ctx *ctx, sample_t *buffer, size_t maxlen,
-			  struct input_format *format);
+	   in the format structure.
+	   Return 0 for EOF or in case of an error. */
+	size_t (*fillbuf)(struct input_plugin_ctx *ctx, sample_t *buffer,
+			  size_t maxlen, struct input_format *format);
 
 	/* Return -1 for EOF, 0 if not supported, and 1 if seek successful */
-	int (*seek)(struct input_plugin_ctx
-		    *ctx, const struct songpos *curpos,
+	int (*seek)(struct input_plugin_ctx *ctx, const struct songpos *curpos,
 		    struct songpos *newpos);
 };
 

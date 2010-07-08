@@ -41,7 +41,7 @@ static bool mad_detect(const char *filename)
 		(ext && !strcasecmp(ext, "mp3"));
 }
 
-static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
+static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 {
 	if (!memcmp(filename, "http://", 7)) {
 		size_t i = 7;
@@ -68,13 +68,13 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 		if (addr == (in_addr_t)-1) {
 			struct hostent *hp = gethostbyname(buf);
 			if (!hp)
-				return false;
+				return -1;
 			addr = ((struct in_addr *)hp->h_addr_list[0])->s_addr;
 		}
 
 		ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
 		if (ctx->fd < 0)
-			return false;
+			return -1;
 
 		struct sockaddr_in sin;
 		sin.sin_family = AF_INET;
@@ -84,7 +84,7 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 		if (connect(ctx->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
 			printf("unable to connect (%s)\n", strerror(errno));
 			close(ctx->fd);
-			return false;
+			return -1;
 		}
 
 		sprintf(buf, "GET %s HTTP/1.0\r\n\r\n", path);
@@ -93,7 +93,7 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 		ctx->fd = open(filename, O_RDONLY);
 		if (ctx->fd < 0) {
 			printf("unable to open file (%s)\n", strerror(errno));
-			return false;
+			return -1;
 		}
 	}
 
@@ -101,7 +101,7 @@ static bool mad_open(struct input_plugin_ctx *ctx, const char *filename)
 	mad_stream_init(&ctx->stream);
 	mad_synth_init(&ctx->synth);
 
-	return true;
+	return 0;
 }
 
 static void mad_close(struct input_plugin_ctx *ctx)
