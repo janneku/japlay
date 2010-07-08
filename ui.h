@@ -15,5 +15,6 @@ void ui_remove_playlist(struct song *song);
 void ui_update_playlist(struct song *song);
 void ui_set_cursor(struct song *prev, struct song *song);
 void ui_set_status(int power, unsigned int position);
+void ui_show_message(const char *msg);
 
 #endif

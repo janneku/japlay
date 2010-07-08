@@ -21,7 +21,6 @@
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <pthread.h>
 
 #define SOCKET_NAME		"/tmp/japlay"
@@ -138,21 +137,31 @@ static void *playback_thread_routine(void *arg)
 			get_song(song);
 			CURSOR_UNLOCK;
 
-			plugin = detect_plugin(get_song_filename(song));
+			const char *filename = get_song_filename(song);
+
+			plugin = detect_plugin(filename);
 			if (!plugin) {
+				char *msg = concat_strings("No plugin for file ", filename);
+				if (msg) {
+					ui_show_message(msg);
+					free(msg);
+				}
 				put_song(song);
 				song = NULL;
-				/* unable to open the file, stop */
 				playing = false;
 				continue;
 			}
 
 			ctx = malloc(plugin->ctx_size);
-			if (plugin->open(ctx, get_song_filename(song))) {
+			if (plugin->open(ctx, filename)) {
+				char *msg = concat_strings("Unable to open file ", filename);
+				if (msg) {
+					ui_show_message(msg);
+					free(msg);
+				}
 				free(ctx);
 				put_song(song);
 				song = NULL;
-				/* unable to open the file, stop */
 				playing = false;
 				continue;
 			}
@@ -222,7 +231,7 @@ static void *playback_thread_routine(void *arg)
 			pos_cnt = 0;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
-				warning("Unable to open audio device\n");
+				ui_show_message("Unable to open audio device");
 				playing = false;
 				continue;
 			}

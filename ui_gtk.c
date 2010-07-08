@@ -178,6 +178,19 @@ void ui_set_status(int power, unsigned int position)
 	unlock_ui();
 }
 
+void ui_show_message(const char *msg)
+{
+	lock_ui();
+	GtkWidget *dialog = gtk_dialog_new_with_buttons(APP_NAME, GTK_WINDOW(main_window),
+		GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+		GTK_STOCK_OK, GTK_RESPONSE_ACCEPT, NULL);
+	g_signal_connect(G_OBJECT(dialog), "response", G_CALLBACK(gtk_widget_destroy), NULL);
+	GtkWidget *label = gtk_label_new(msg);
+	gtk_container_add(GTK_CONTAINER(GTK_DIALOG(dialog)->vbox), label);
+	gtk_widget_show_all(dialog);
+	unlock_ui();
+}
+
 static void add_one_file(char *filename, gpointer ptr)
 {
 	UNUSED(ptr);
@@ -404,7 +417,7 @@ int main(int argc, char **argv)
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("Quit");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(gtk_main_quit), NULL);
+	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(destroy_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("File");
