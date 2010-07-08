@@ -2,6 +2,8 @@
  * japlay mikmod MPEG audio decoder plugin
  * Copyright Janne Kulmala 2010
  */
+#include "plugin.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,8 +15,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/types.h>
+#include <assert.h>
+
 #include <mad.h>
-#include "plugin.h"
 
 struct input_plugin_ctx {
 	struct mad_stream stream;
@@ -22,7 +26,106 @@ struct input_plugin_ctx {
 	struct mad_synth synth;
 	int fd;
 	unsigned char buffer[8192];
+	size_t *seconds;
+	size_t nseconds;
 };
+
+static struct input_plugin *plugin;
+
+#define DEFAULT_BYTE_RATE (128000 / 8)
+#define MAX_SECS (365 * 24 * 3600)     /* a year :-) */
+
+static void remember(struct input_plugin_ctx *ctx, size_t fpos, size_t t)
+{
+	size_t *seconds;
+	size_t nseconds;
+	size_t i;
+
+	if (t >= MAX_SECS)
+		return;
+
+	if (t >= ctx->nseconds) {
+		nseconds = (t == 0) ? 8 : 2 * t;
+		seconds = realloc(ctx->seconds, nseconds * sizeof(ctx->seconds[0]));
+		if (seconds == NULL)
+			return;
+		for (i = ctx->nseconds; i < nseconds; i++)
+			seconds[i] = 0;
+		ctx->seconds = seconds;
+		ctx->nseconds = nseconds;
+	}
+
+	if (t == 0 || ctx->seconds[t])
+		return;
+
+	ctx->seconds[t] = fpos;
+}
+
+static size_t recall(struct input_plugin_ctx *ctx, size_t t)
+{
+	if (t < ctx->nseconds && ctx->seconds[t])
+		return ctx->seconds[t];
+	return 0;
+}
+
+static size_t estimate(struct input_plugin_ctx *ctx, size_t t)
+{
+	size_t lo_fpos = 0;
+	size_t lo_t = 0;
+	size_t hi_fpos = 0;
+	size_t hi_t = 0;
+	size_t newpos;
+	size_t avg;
+
+	if (t == 0)
+		return 0;
+
+	newpos = recall(ctx, t);
+	if (newpos > 0)
+		return newpos;
+
+	if (t < ctx->nseconds) {
+		/* Find previous non-zero offset */
+		for (lo_t = t; lo_t > 0; lo_t--) {
+			lo_fpos = ctx->seconds[lo_t];
+			if (lo_fpos)
+				break;
+		}
+
+		/* Find the next non-zero offset */
+		for (hi_t = t + 1; hi_t < ctx->nseconds; hi_t++) {
+			hi_fpos = ctx->seconds[hi_t];
+			if (hi_fpos)
+				break;
+		}
+		if (hi_t == ctx->nseconds)
+			hi_t = 0;
+
+	} else if (ctx->nseconds > 0) {
+		/* Find last non-zero offset */
+		for (hi_t = ctx->nseconds - 1; hi_t > 0; hi_t--) {
+			hi_fpos = ctx->seconds[hi_t];
+			if (hi_fpos)
+				break;
+		}
+	}
+
+	if (lo_t <= t && t < hi_t) {
+		/* Interpolate between lo_t and hi_t points */
+		avg = (hi_fpos - lo_fpos) / (hi_t - lo_t);
+		newpos = lo_fpos + (t - lo_t) * avg;
+	} else if (hi_t > lo_t) {
+		/* Extrapolate over hi_t. avg calculated from lo_t and hi_t. */
+		avg = (hi_fpos - lo_fpos) / (hi_t - lo_t);
+		newpos = hi_fpos + (t - hi_t) * avg;
+	} else {
+		/* No average, make a quess. hi_t == hi_fpos == 0 is OK. */
+		avg = DEFAULT_BYTE_RATE;
+		newpos = hi_fpos + avg * (t - hi_t);
+	}
+
+	return newpos;
+}
 
 static const char *file_ext(const char *filename)
 {
@@ -34,6 +137,7 @@ static const char *file_ext(const char *filename)
 	}
 	return NULL;
 }
+
 static bool mad_detect(const char *filename)
 {
 	const char *ext = file_ext(filename);
@@ -101,6 +205,9 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 	mad_stream_init(&ctx->stream);
 	mad_synth_init(&ctx->synth);
 
+	ctx->seconds = NULL;
+	ctx->nseconds = 0;
+
 	return 0;
 }
 
@@ -110,6 +217,9 @@ static void mad_close(struct input_plugin_ctx *ctx)
 	mad_stream_finish(&ctx->stream);
 	mad_synth_finish(&ctx->synth);
 	close(ctx->fd);
+	free(ctx->seconds);
+	ctx->seconds = NULL;
+	ctx->nseconds = 0;
 }
 
 static sample_t scale(mad_fixed_t sample)
@@ -130,8 +240,11 @@ static sample_t scale(mad_fixed_t sample)
 static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			  size_t maxlen, struct input_format *format)
 {
+	size_t t;
 	while (true) {
 		size_t len = 0;
+		off_t offs;
+
 		if (ctx->stream.next_frame) {
 			len = ctx->stream.bufend - ctx->stream.next_frame;
 			if (len)
@@ -143,6 +256,12 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			return 0;
 		}
 		len += ret;
+
+		offs = lseek(ctx->fd, 0, SEEK_CUR);
+		if (offs == -1)
+			offs = 0;
+		if ((size_t) offs >= len)
+			offs -= len;
 
 		mad_stream_buffer(&ctx->stream, ctx->buffer, len);
 
@@ -183,11 +302,39 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			for (i = 0; i < ctx->synth.pcm.length; ++i)
 				buffer[i] = scale(ctx->synth.pcm.samples[0][i]);
 		}
+
+		t = plugin->get_position() / 1000;
+		if (!recall(ctx, t))
+			remember(ctx, offs, t);
 		return len;
 	}
 }
 
-static const struct input_plugin plugin_info = {
+static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
+{
+	size_t offs;
+	size_t curt;
+	size_t t = newpos->msecs / 1000;
+
+	curt = plugin->get_position() / 1000;
+	if (t == curt)
+		return 1;
+
+	offs = recall(ctx, t);
+	if (!offs)
+		offs = estimate(ctx, t);
+
+	lseek(ctx->fd, offs, SEEK_SET);
+
+	newpos->msecs = 1000 * t;
+
+	mad_stream_finish(&ctx->stream);
+	mad_stream_init(&ctx->stream);
+
+	return 1;
+}
+
+static struct input_plugin plugin_info = {
 	.size = sizeof(struct input_plugin),
 	.ctx_size = sizeof(struct input_plugin_ctx),
 	.name = "libmad MPEG audio decoder",
@@ -195,9 +342,12 @@ static const struct input_plugin plugin_info = {
 	.open = mad_open,
 	.close = mad_close,
 	.fillbuf = mad_fillbuf,
+	.seek = mad_seek,
 };
 
-const struct input_plugin *get_info()
+
+struct input_plugin *get_info()
 {
-	return &plugin_info;
+	plugin = &plugin_info;
+	return plugin;
 }

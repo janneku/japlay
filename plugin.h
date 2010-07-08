@@ -1,3 +1,6 @@
+#ifndef _JAPLAY_PLUGIN_H_
+#define _JAPLAY_PLUGIN_H_
+
 #include <stdbool.h> /* bool */
 #include <string.h> /* size_t */
 
@@ -41,8 +44,12 @@ struct input_plugin {
 			  size_t maxlen, struct input_format *format);
 
 	/* Return -1 for EOF, 0 if not supported, and 1 if seek successful */
-	int (*seek)(struct input_plugin_ctx *ctx, const struct songpos *curpos,
-		    struct songpos *newpos);
+	int (*seek)(struct input_plugin_ctx *ctx, struct songpos *newpos);
+
+	/* Call this to get current position in milliseconds */
+	unsigned int (*get_position)(void);
 };
 
-const struct input_plugin *get_info();
+struct input_plugin *get_info();
+
+#endif

@@ -67,11 +67,8 @@ static size_t vorbis_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 	return 0;
 }
 
-static int vorbis_seek(struct input_plugin_ctx *ctx,
-		       const struct songpos *curpos,
-		       struct songpos *newpos)
+static int vorbis_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 {
-	curpos = curpos;
 	double s = ((double) newpos->msecs) / 1000.0;
 	int ret = ov_time_seek(&ctx->vf, s);
 	if (ret < 0) {
@@ -81,7 +78,7 @@ static int vorbis_seek(struct input_plugin_ctx *ctx,
 	return 1;
 }
 
-static const struct input_plugin plugin_info = {
+static struct input_plugin plugin_info = {
 	.size = sizeof(struct input_plugin),
 	.ctx_size = sizeof(struct input_plugin_ctx),
 	.name = "Ogg vorbis decoder",
@@ -92,7 +89,7 @@ static const struct input_plugin plugin_info = {
 	.seek = vorbis_seek,
 };
 
-const struct input_plugin *get_info()
+struct input_plugin *get_info()
 {
 	return &plugin_info;
 }
