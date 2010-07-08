@@ -12,6 +12,7 @@
 #include "unixsocket.h"
 #include "list.h"
 #include "config.h"
+#include "buffer.h"
 
 #include <unistd.h>
 #include <ctype.h>
@@ -61,8 +62,12 @@ struct decode_state {
 	struct input_plugin *plugin;
 	struct input_plugin_ctx *ctx;
 	struct input_format format; /* current audio format */
-	unsigned int position; /* position in milliseconds */
+	unsigned int position; /* decode position in milliseconds */
 	unsigned int pos_cnt;
+	unsigned int playposition; /* playback position in milliseconds */
+	unsigned int playpos_cnt;
+	bool eof;
+	struct audio_buffer buffer;
 };
 
 static struct decode_state ds;
@@ -118,6 +123,8 @@ static void set_cursor(struct song *song)
 
 static int init_decode(struct decode_state *ds, struct song *song)
 {
+	memset(ds, 0, sizeof(*ds));
+
 	const char *filename = get_song_filename(song);
 
 	ds->plugin = detect_plugin(filename);
@@ -134,10 +141,7 @@ static int init_decode(struct decode_state *ds, struct song *song)
 	}
 	get_song(song);
 	ds->song = song;
-	ds->position = 0;
-	ds->pos_cnt = 0;
-	ds->format.rate = 0;
-	ds->format.channels = 0;
+	init_buffer(&ds->buffer);
 	return 0;
 }
 
@@ -148,11 +152,46 @@ static void finish_decode(struct decode_state *ds)
 	put_song(ds->song);
 }
 
+static void run_decode(struct decode_state *ds)
+{
+	/* decode as much as possible */
+	while (true) {
+		size_t max = buffer_write_avail(&ds->buffer, MIN_FILL);
+		if (max < MIN_FILL)
+			break;
+
+		struct input_format format;
+		size_t filled = ds->plugin->fillbuf(ds->ctx,
+			write_buffer(&ds->buffer), max, &format);
+		if (!filled) {
+			ds->eof = true;
+			break;
+		}
+
+		/* check for format changes */
+		if (ds->format.rate != format.rate ||
+		    ds->format.channels != format.channels) {
+			info("Detected format change\n");
+			ds->pos_cnt = 0;
+			ds->format = format;
+			mark_buffer_formatchg(&ds->buffer);
+		}
+
+		buffer_written(&ds->buffer, filled);
+
+		ds->pos_cnt += filled;
+
+		/* advance song position with full milliseconds from pos_cnt */
+		unsigned int samplerate = ds->format.rate * ds->format.channels;
+		unsigned int adv = ds->pos_cnt * 1000 / samplerate;
+		ds->position += adv;
+		ds->pos_cnt -= adv * samplerate / 1000;
+	}
+}
+
 static void *playback_thread_routine(void *arg)
 {
 	UNUSED(arg);
-
-	static sample_t buffer[8192];
 
 	ao_device *dev = NULL;
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,
@@ -203,9 +242,8 @@ static void *playback_thread_routine(void *arg)
 		else
 			CURSOR_UNLOCK;
 
-		int skipsong = 0;
 		if (toseek) {
-			struct songpos newpos = {.msecs = ds.position};
+			struct songpos newpos = {.msecs = ds.playposition};
 			long msecs = newpos.msecs + toseek;
 			if (msecs < 0)
 				msecs = 0;
@@ -214,20 +252,27 @@ static void *playback_thread_routine(void *arg)
 			int seekret = ds.plugin->seek(ds.ctx, &newpos);
 			if (seekret < 0) {
 				error("Seek error\n");
-				skipsong = 1;
+				ds.eof = true;
 			} else if (seekret == 0) {
 				warning("Seek not supported\n");
 			} else {
 				info("Seeking to %ld.%.1lds\n", newpos.msecs / 1000, (newpos.msecs % 1000) / 100);
 				ds.position = newpos.msecs;
+				ds.playposition = newpos.msecs;
 				ds.pos_cnt = 0;
+				ds.playpos_cnt = 0;
 			}
+			init_buffer(&ds.buffer);
 		}
 
-		size_t len = 0;
-		if (!skipsong)
-			len = ds.plugin->fillbuf(ds.ctx, buffer, sizeof(buffer) / sizeof(sample_t), &ds.format);
-		if (!len) {
+		if (!ds.eof)
+			run_decode(&ds);
+
+		size_t avail = buffer_read_avail(&ds.buffer);
+
+		if (!avail) {
+			if (!ds.eof)
+				continue;
 			reset = true;
 
 			/* if we are still playing the same song, go to next one */
@@ -246,8 +291,10 @@ static void *playback_thread_routine(void *arg)
 			continue;
 		}
 
-		if (ds.format.rate != (unsigned int) format.rate ||
-		    ds.format.channels != (unsigned int) format.channels || !dev) {
+		bool formatchg = check_buffer_formatchg(&ds.buffer) &&
+				(ds.format.rate != (unsigned int) format.rate ||
+				 ds.format.channels != (unsigned int) format.channels);
+		if (formatchg || !dev) {
 			/* format changed or device is not open */
 			if (dev)
 				ao_close(dev);
@@ -257,7 +304,7 @@ static void *playback_thread_routine(void *arg)
 			format.channels = ds.format.channels;
 			power_cnt = 0;
 			power = 0;
-			ds.pos_cnt = 0;
+			ds.playpos_cnt = 0;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (!dev) {
 				ui_show_message("Unable to open audio device");
@@ -266,27 +313,31 @@ static void *playback_thread_routine(void *arg)
 			}
 		}
 
+		const sample_t *buffer = read_buffer(&ds.buffer);
+
 		size_t i;
-		for (i = power_cnt & 31; i < len; i += 32)
+		for (i = power_cnt & 31; i < avail; i += 32)
 			power += abs(buffer[i]) / 256;
 
-		unsigned int samplerate = ds.format.rate * ds.format.channels;
-		ds.pos_cnt += len;
+		ds.playpos_cnt += avail;
 
 		/* advance song position with full milliseconds from pos_cnt */
-		unsigned int adv = ds.pos_cnt * 1000 / samplerate;
-		ds.position += adv;
-		ds.pos_cnt -= adv * samplerate / 1000;
+		unsigned int samplerate = ds.format.rate * ds.format.channels;
+		unsigned int adv = ds.playpos_cnt * 1000 / samplerate;
+		ds.playposition += adv;
+		ds.playpos_cnt -= adv * samplerate / 1000;
 
 		/* Update UI status 16 times per second */
-		power_cnt += len;
+		power_cnt += avail;
 		if (power_cnt >= (unsigned int) samplerate / 16) {
-			ui_set_status(power * 64 / power_cnt, ds.position);
+			ui_set_status(power * 64 / power_cnt, ds.playposition);
 			power_cnt = 0;
 			power = 0;
 		}
 
-		ao_play(dev, (char *)buffer, len * 2);
+		ao_play(dev, (char *)buffer, avail * 2);
+
+		buffer_processed(&ds.buffer, avail);
 	}
 
 	return NULL;

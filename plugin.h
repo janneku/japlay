@@ -12,6 +12,8 @@ struct songpos {
 	unsigned long msecs;
 };
 
+#define MIN_FILL	4096 /* minimum buffer length for plugin fillbuf call */
+
 struct input_plugin_ctx;
 
 typedef signed short sample_t;
