@@ -4,7 +4,7 @@
 #include <string.h> /* size_t */
 #include "plugin.h"
 
-#define BUFFER_LEN		16384
+#define BUFFER_LEN		0x8000
 
 struct audio_buffer {
 	size_t head, tail, wrap, formatchg;

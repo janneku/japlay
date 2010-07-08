@@ -26,6 +26,8 @@
 
 #define SOCKET_NAME		"/tmp/japlay"
 
+#define REFRESH_RATE	16   /* how often to run the playback loop */
+
 int debug = 0;
 
 static pthread_mutex_t cursor_mutex;
@@ -315,6 +317,10 @@ static void *playback_thread_routine(void *arg)
 
 		const sample_t *buffer = read_buffer(&ds.buffer);
 
+		unsigned int samplerate = ds.format.rate * ds.format.channels;
+		if (avail > samplerate / REFRESH_RATE)
+			avail = samplerate / REFRESH_RATE;
+
 		size_t i;
 		for (i = power_cnt & 31; i < avail; i += 32)
 			power += abs(buffer[i]) / 256;
@@ -322,14 +328,13 @@ static void *playback_thread_routine(void *arg)
 		ds.playpos_cnt += avail;
 
 		/* advance song position with full milliseconds from pos_cnt */
-		unsigned int samplerate = ds.format.rate * ds.format.channels;
 		unsigned int adv = ds.playpos_cnt * 1000 / samplerate;
 		ds.playposition += adv;
 		ds.playpos_cnt -= adv * samplerate / 1000;
 
-		/* Update UI status 16 times per second */
+		/* Update UI status */
 		power_cnt += avail;
-		if (power_cnt >= (unsigned int) samplerate / 16) {
+		if (power_cnt >= samplerate / REFRESH_RATE) {
 			ui_set_status(power * 64 / power_cnt, ds.playposition);
 			power_cnt = 0;
 			power = 0;
