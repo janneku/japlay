@@ -4,6 +4,7 @@
  */
 #include <vorbis/vorbisfile.h>
 #include "plugin.h"
+#include "common.h"
 
 struct input_plugin_ctx {
 	OggVorbis_File vf;
@@ -66,14 +67,29 @@ static size_t vorbis_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 	return 0;
 }
 
+static int vorbis_seek(struct input_plugin_ctx *ctx,
+		       const struct songpos *curpos,
+		       struct songpos *newpos)
+{
+	curpos = curpos;
+	double s = ((double) newpos->msecs) / 1000.0;
+	int ret = ov_time_seek(&ctx->vf, s);
+	if (ret < 0) {
+		warning("ov_time_seek() error: %d\n", ret);
+		return -1;
+	}
+	return 1;
+}
+
 static const struct input_plugin plugin_info = {
-	sizeof(struct input_plugin),
-	sizeof(struct input_plugin_ctx),
-	"Ogg vorbis decoder",
-	vorbis_detect,
-	vorbis_open,
-	vorbis_close,
-	vorbis_fillbuf,
+	.size = sizeof(struct input_plugin),
+	.ctx_size = sizeof(struct input_plugin_ctx),
+	.name = "Ogg vorbis decoder",
+	.detect = vorbis_detect,
+	.open = vorbis_open,
+	.close = vorbis_close,
+	.fillbuf = vorbis_fillbuf,
+	.seek = vorbis_seek,
 };
 
 const struct input_plugin *get_info()

@@ -40,6 +40,8 @@ static struct song *playing = NULL;
 
 static pthread_t playback_thread;
 
+static long toseek = 0;
+
 /* Protects "playing" and "reset" variables */
 #define PLAYING_LOCK pthread_mutex_lock(&playing_mutex)
 #define PLAYING_UNLOCK pthread_mutex_unlock(&playing_mutex)
@@ -158,9 +160,32 @@ static void *playback_thread_routine(void *arg)
 		else
 			PLAYING_UNLOCK;
 
+		int skipsong = 0;
+		if (toseek) {
+			struct songpos curpos = {.msecs = position};
+			struct songpos newpos = curpos;
+			long msecs = curpos.msecs + toseek;
+			if (msecs < 0)
+				msecs = 0;
+			newpos.msecs = msecs;
+			toseek = 0;
+			int seekret = plugin->seek(ctx, &curpos, &newpos);
+			if (seekret < 0) {
+				error("Seek error\n");
+				skipsong = 1;
+			} else if (seekret == 0) {
+				warning("Seek not supported\n");
+			} else {
+				info("Seeking to %ld.%.1lds\n", newpos.msecs / 1000, (newpos.msecs % 1000) / 100);
+				position = newpos.msecs;
+				pos_cnt = 0;
+			}
+		}
+
 		struct input_format iformat = {.rate = 0,};
-		size_t len = plugin->fillbuf(ctx, buffer,
-			sizeof(buffer) / sizeof(sample_t), &iformat);
+		size_t len = 0;
+		if (!skipsong)
+			len = plugin->fillbuf(ctx, buffer, sizeof(buffer) / sizeof(sample_t), &iformat);
 		if (!len) {
 			struct song *song = get_playing();
 			struct song *next = playlist_next(song, true);
@@ -316,6 +341,11 @@ void japlay_play(void)
 	kick_playback();
 }
 
+void japlay_seek_relative(long msecs)
+{
+	toseek = msecs;
+}
+
 void japlay_stop(void)
 {
 	reset = true;
@@ -338,6 +368,16 @@ void japlay_skip(void)
 	}
 }
 
+static int dummy_seek(struct input_plugin_ctx *ctx,
+		      const struct songpos *curpos,
+		      struct songpos *newpos)
+{
+	UNUSED(ctx);
+	UNUSED(curpos);
+	UNUSED(newpos);
+	return 0;
+}
+
 static bool load_plugin(const char *filename)
 {
 	void *dl = dlopen(filename, RTLD_NOW);
@@ -351,6 +391,9 @@ static bool load_plugin(const char *filename)
 	}
 
 	struct input_plugin *info = get_info();
+
+	if (info->seek == NULL)
+		info->seek = dummy_seek;
 
 	info("found plugin: %s (%s)\n", file_base(filename), info->name);
 

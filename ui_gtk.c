@@ -10,6 +10,7 @@
 #include "iowatch.h"
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
+#include <gdk/gdkkeysyms.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -300,6 +301,23 @@ static int incoming_wake(int fd, int flags, void *ctx)
 	return 0;
 }
 
+static gboolean key_pressed_cb(GtkWidget *widget, GdkEventKey *key, gpointer data)
+{
+	UNUSED(widget);
+	UNUSED(data);
+	switch (key->keyval) {
+	case GDK_Left:
+		japlay_seek_relative(-10000);
+		return TRUE;
+	case GDK_Right:
+		japlay_seek_relative(10000);
+		return TRUE;
+	default:
+		break;
+	}
+	return FALSE;
+}
+
 static int incoming_x11_event(int fd, int flags, void *ctx)
 {
 	UNUSED(fd);
@@ -340,6 +358,7 @@ int main(int argc, char **argv)
 	main_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_title(GTK_WINDOW(main_window), APP_NAME);
 	g_signal_connect(G_OBJECT(main_window), "destroy", G_CALLBACK(destroy_cb), NULL);
+	g_signal_connect(G_OBJECT(main_window), "key-press-event", G_CALLBACK(key_pressed_cb), NULL);
 
 	playlist_store = gtk_list_store_new(NUM_COLS, G_TYPE_POINTER, G_TYPE_STRING, G_TYPE_STRING);
 

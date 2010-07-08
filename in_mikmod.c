@@ -132,13 +132,13 @@ static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 }
 
 static const struct input_plugin plugin_info = {
-	sizeof(struct input_plugin),
-	sizeof(struct input_plugin_ctx),
-	"MikMod module player",
-	mikmod_detect,
-	mikmod_open,
-	mikmod_close,
-	mikmod_fillbuf,
+	.size = sizeof(struct input_plugin),
+	.ctx_size = sizeof(struct input_plugin_ctx),
+	.name = "MikMod module player",
+	.detect = mikmod_detect,
+	.open = mikmod_open,
+	.close = mikmod_close,
+	.fillbuf = mikmod_fillbuf,
 };
 
 const struct input_plugin *get_info()
