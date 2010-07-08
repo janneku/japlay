@@ -28,6 +28,7 @@ struct input_plugin_ctx {
 	unsigned char buffer[8192];
 	size_t *seconds;
 	size_t nseconds;
+	bool reliable;
 };
 
 #define DEFAULT_BYTE_RATE (128000 / 8)
@@ -205,6 +206,7 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 
 	ctx->seconds = NULL;
 	ctx->nseconds = 0;
+	ctx->reliable = true;
 
 	return 0;
 }
@@ -271,15 +273,15 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		mad_stream_buffer(&ctx->stream, ctx->buffer, len);
 
 		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
-			if (ctx->stream.error == MAD_ERROR_BUFLEN)
+			if (ctx->stream.error == MAD_ERROR_BUFLEN) {
+				japlay_set_song_length(japlay_get_position(), ctx->reliable);
 				return 0;
+			}
 			print_mad_error(&ctx->stream);
 			continue;
 		}
 
 		if (mad_frame_decode(&ctx->frame, &ctx->stream)) {
-			if (ctx->stream.error == MAD_ERROR_BUFLEN)
-				return 0;
 			print_mad_error(&ctx->stream);
 			continue;
 		}
@@ -337,6 +339,8 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	mad_synth_mute(&ctx->synth);
 	mad_stream_finish(&ctx->stream);
 	mad_stream_init(&ctx->stream);
+
+	ctx->reliable = false;
 
 	return 1;
 }
