@@ -8,7 +8,7 @@ struct input_plugin;
 
 struct song *get_cursor(void);
 
-void add_file_playlist(const char *filename);
+struct song *add_file_playlist(const char *filename);
 
 bool load_playlist_pls(const char *filename);
 bool load_playlist_m3u(const char *filename);

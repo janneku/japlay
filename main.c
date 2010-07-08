@@ -295,17 +295,16 @@ static char *trim(char *buf)
 	return &buf[i];
 }
 
-void add_file_playlist(const char *filename)
+struct song *add_file_playlist(const char *filename)
 {
 	char *path = absolute_path(filename);
 	if (!path)
-		return;
+		return NULL;
 	struct song *song = new_song(path);
-	if (song) {
+	if (song)
 		add_playlist(song);
-		put_song(song);
-	}
 	free(path);
+	return song;
 }
 
 bool load_playlist_pls(const char *filename)
@@ -324,7 +323,9 @@ bool load_playlist_pls(const char *filename)
 		if (!memcmp(trim(row), "File", 4)) {
 			char *fname = build_filename(filename, trim(value));
 			if (fname) {
-				add_file_playlist(fname);
+				struct song *song = add_file_playlist(fname);
+				if (song)
+					put_song(song);
 				free(fname);
 			}
 		}
@@ -340,15 +341,23 @@ bool load_playlist_m3u(const char *filename)
 		return false;
 
 	char row[512];
+	struct song *song = NULL;
 	while (fgets(row, sizeof(row), f)) {
 		if (row[0] != '#') {
+			if (song)
+				put_song(song);
+			song = NULL;
 			char *fname = build_filename(filename, trim(row));
 			if (fname) {
-				add_file_playlist(fname);
+				song = add_file_playlist(fname);
 				free(fname);
 			}
+		} else if(!memcmp(row, "#length ", 8) && song) {
+			set_song_length(song, atoi(&row[8]), false);
 		}
 	}
+	if (song)
+		put_song(song);
 	fclose(f);
 	return true;
 }
@@ -508,7 +517,9 @@ static int incoming_data(int fd, int flags, void *ctx)
 		return -1;
 	}
 	filename[len] = 0;
-	add_file_playlist(filename);
+	struct song *song = add_file_playlist(filename);
+	if (song)
+		put_song(song);
 	return 0;
 }
 

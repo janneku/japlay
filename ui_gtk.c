@@ -206,8 +206,11 @@ static void add_one_file(char *filename, gpointer ptr)
 			load_playlist_pls(filename);
 		else if (!strcasecmp(ext, "m3u"))
 			load_playlist_m3u(filename);
-		else
-			add_file_playlist(filename);
+		else {
+			struct song *song = add_file_playlist(filename);
+			if (song)
+				put_song(song);
+		}
 	} else
 		add_file_playlist(filename);
 	g_free(filename);

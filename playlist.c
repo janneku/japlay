@@ -191,8 +191,9 @@ bool save_playlist_m3u(const char *filename)
 	PLAYLIST_LOCK;
 	list_for_each(pos, &playlist) {
 		struct song *song = container_of(pos, struct song, head);
-		fputs(song->filename, f);
-		fputc('\n', f);
+		fprintf(f, "%s\n", song->filename);
+		if (song->length != -1)
+			fprintf(f, "#length %d\n", song->length);
 	}
 	PLAYLIST_UNLOCK;
 
