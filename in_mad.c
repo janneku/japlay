@@ -67,6 +67,35 @@ static size_t recall(struct input_plugin_ctx *ctx, size_t t)
 	return 0;
 }
 
+static unsigned int estimate_length(struct input_plugin_ctx *ctx)
+{
+	size_t lo_fpos = 0;
+	size_t lo_t = 0;
+	size_t hi_fpos = 0;
+	size_t hi_t = 0;
+	size_t avg;
+	size_t length;
+	off_t len = lseek(ctx->fd, 0, SEEK_END);
+
+	if (ctx->nseconds > 0) {
+		/* Find last non-zero offset */
+		for (hi_t = ctx->nseconds - 1; hi_t > 0; hi_t--) {
+			hi_fpos = ctx->seconds[hi_t];
+			if (hi_fpos)
+				break;
+		}
+	}
+	if (hi_fpos > lo_fpos) {
+		avg = (hi_fpos - lo_fpos) / (hi_t - lo_t);
+		length = hi_t + (len - hi_fpos) / avg;
+	} else {
+		avg = DEFAULT_BYTE_RATE;
+		length = hi_t + (len - hi_fpos) / avg;
+	}
+
+	return length;
+}
+
 static size_t estimate(struct input_plugin_ctx *ctx, size_t t)
 {
 	size_t lo_fpos = 0;
@@ -213,6 +242,7 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 
 static void mad_close(struct input_plugin_ctx *ctx)
 {
+	japlay_set_song_length(estimate_length(ctx) * 1000, false);
 	mad_frame_finish(&ctx->frame);
 	mad_stream_finish(&ctx->stream);
 	mad_synth_finish(&ctx->synth);
