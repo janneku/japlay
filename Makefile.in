@@ -25,7 +25,7 @@ in_vorbis.o:	in_vorbis.c
 	$(CC) $(PLUGIN_CFLAGS) `pkg-config vorbisfile --cflags` -c $<
 
 ui_gtk.o:	ui_gtk.c
-	$(CC) $(PLUGIN_CFLAGS) `pkg-config gtk+-2.0 --cflags` -c $<
+	$(CC) `pkg-config gtk+-2.0 --cflags` -c $<
 
 %.o:	%.c
 	$(CC) $(CFLAGS) -c $<
