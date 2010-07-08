@@ -237,14 +237,9 @@ static sample_t scale(mad_fixed_t sample)
 
 static void print_mad_error(const struct mad_stream *stream)
 {
-	switch (stream->error) {
-	case MAD_ERROR_LOSTSYNC:
-	case MAD_ERROR_BADDATAPTR:
-		break;
-	default:
-		printf("MAD error: %s\n", mad_stream_errorstr(stream));
-		break;
-	}
+	if (stream->error == MAD_ERROR_NONE || MAD_RECOVERABLE(stream->error))
+		return;
+	printf("MAD error: %s\n", mad_stream_errorstr(stream));
 }
 
 static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
@@ -338,6 +333,8 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 
 	newpos->msecs = 1000 * t;
 
+	mad_frame_mute(&ctx->frame);
+	mad_synth_mute(&ctx->synth);
 	mad_stream_finish(&ctx->stream);
 	mad_stream_init(&ctx->stream);
 
