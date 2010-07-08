@@ -72,13 +72,13 @@ static void set_playlist_color(struct song *song, const char *color)
 	gtk_list_store_set(playlist_store, &iter, COL_COLOR, color, -1);
 }
 
-static const char *get_display_name(struct song *song)
+static char *get_display_name(struct song *song)
 {
 	const char *filename = get_song_filename(song);
 
 	if (!memcmp(filename, "http://", 7))
 		return filename;
-	return file_base(filename);
+	return g_filename_to_utf8(file_base(filename), -1, NULL, NULL, NULL);
 }
 
 void ui_add_playlist(struct song *song)
@@ -88,8 +88,10 @@ void ui_add_playlist(struct song *song)
 	lock_ui();
 	GtkTreeIter iter;
 	gtk_list_store_append(playlist_store, &iter);
+	char *name = get_display_name(song);
 	gtk_list_store_set(playlist_store, &iter, COL_ENTRY, song,
-		COL_NAME, get_display_name(song), COL_COLOR, NULL, -1);
+		COL_NAME, name, COL_COLOR, NULL, -1);
+	free(name);
 
 	/* store row reference */
 	GtkTreePath *path = gtk_tree_model_get_path(GTK_TREE_MODEL(playlist_store), &iter);
@@ -124,15 +126,14 @@ void ui_set_playing(struct song *prev, struct song *song)
 
 	set_playlist_color(song, "red");
 
-	static const char app_name[] = " - " APP_NAME;
-
-	const char *name = get_display_name(song);
-
-	char *buf = concat_strings(name, app_name);
+	char *name = get_display_name(song);
+	char *buf = concat_strings(name, " - " APP_NAME);
 	if (buf) {
 		gtk_window_set_title(GTK_WINDOW(main_window), buf);
 		free(buf);
 	}
+	free(name);
+
 	write(wake_fd, "", 1);
 	unlock_ui();
 }
