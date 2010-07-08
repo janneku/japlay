@@ -93,8 +93,11 @@ void ui_add_playlist(struct song *song)
 	gtk_list_store_append(playlist_store, &iter);
 	char *name = get_display_name(song);
 	char buf[32];
-	sprintf(buf, "%d:%02d", get_song_length(song) / (1000 * 60),
-		(get_song_length(song) / 1000) % 60);
+	unsigned int length = get_song_length(song);
+	if (length == -1)
+		strcpy(buf, "-");
+	else
+		sprintf(buf, "%d:%02d", length / (1000 * 60), (length / 1000) % 60);
 	gtk_list_store_set(playlist_store, &iter, COL_ENTRY, song,
 		COL_NAME, name, COL_LENGTH, buf, COL_COLOR, NULL, -1);
 	free(name);
@@ -139,8 +142,11 @@ void ui_update_playlist(struct song *song)
 
 	char *name = get_display_name(song);
 	char buf[32];
-	sprintf(buf, "%d:%02d", get_song_length(song) / (1000 * 60),
-		(get_song_length(song) / 1000) % 60);
+	unsigned int length = get_song_length(song);
+	if (length == -1)
+		strcpy(buf, "-");
+	else
+		sprintf(buf, "%d:%02d", length / (1000 * 60), (length / 1000) % 60);
 	gtk_list_store_set(playlist_store, &iter,
 		COL_NAME, name, COL_LENGTH, buf, -1);
 	free(name);
