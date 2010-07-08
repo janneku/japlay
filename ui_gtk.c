@@ -112,6 +112,7 @@ void ui_remove_playlist(struct song *song)
 
 	lock_ui();
 	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
+	gtk_tree_row_reference_free(ctx->rowref);
 
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
@@ -131,7 +132,6 @@ void ui_update_playlist(struct song *song)
 
 	lock_ui();
 	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
-	gtk_tree_row_reference_free(ctx->rowref);
 
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
