@@ -362,6 +362,12 @@ static gboolean key_pressed_cb(GtkWidget *widget, GdkEventKey *key, gpointer dat
 	case GDK_Right:
 		japlay_seek_relative(10000);
 		return TRUE;
+	case 'a':
+		japlay_set_autovol(true);
+		return TRUE;
+	case 'A':
+		japlay_set_autovol(false);
+		return TRUE;
 	default:
 		break;
 	}

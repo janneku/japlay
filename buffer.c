@@ -43,7 +43,7 @@ int buffer_write_avail(struct audio_buffer *buf, size_t min_avail)
 	return max;
 }
 
-const sample_t *read_buffer(struct audio_buffer *buf)
+sample_t *read_buffer(struct audio_buffer *buf)
 {
 	return &buf->data[buf->tail];
 }

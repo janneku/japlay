@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <ao/ao.h>
+#include <limits.h>
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -27,6 +28,8 @@
 #define SOCKET_NAME		"/tmp/japlay"
 
 #define REFRESH_RATE	16   /* how often to run the playback loop */
+
+#define TARGET_POWER	64   /* target power for auto adjustment */
 
 int debug = 0;
 
@@ -43,6 +46,9 @@ static struct list_head plugins;
 static struct song *cursor = NULL;
 
 static pthread_t playback_thread;
+
+static bool autovol = false;
+static int volume = 256;
 
 static long toseek = 0;
 
@@ -315,13 +321,24 @@ static void *playback_thread_routine(void *arg)
 			}
 		}
 
-		const sample_t *buffer = read_buffer(&ds.buffer);
+		sample_t *buffer = read_buffer(&ds.buffer);
 
 		unsigned int samplerate = ds.format.rate * ds.format.channels;
 		if (avail > samplerate / REFRESH_RATE)
 			avail = samplerate / REFRESH_RATE;
 
 		size_t i;
+		if (volume != 256) {
+			for (i = 0; i < avail; ++i) {
+				int newsample = buffer[i] * volume / 256;
+				if (newsample < SHRT_MIN)
+					newsample = SHRT_MIN;
+				if (newsample > SHRT_MAX)
+					newsample = SHRT_MAX;
+				buffer[i] = newsample;
+			}
+		}
+
 		for (i = power_cnt & 31; i < avail; i += 32)
 			power += abs(buffer[i]) / 256;
 
@@ -335,7 +352,17 @@ static void *playback_thread_routine(void *arg)
 		/* Update UI status */
 		power_cnt += avail;
 		if (power_cnt >= samplerate / REFRESH_RATE) {
-			ui_set_status(power * 64 / power_cnt, ds.playposition);
+			/* Scale power to 0..255 */
+			power = power * 64 / power_cnt;
+
+			/* Automatic volume adjust */
+			int zone = TARGET_POWER / 3;
+			if (autovol && (power < TARGET_POWER-zone || power > TARGET_POWER+zone)) {
+				volume += (TARGET_POWER - (int)power) / zone;
+				info("autovol %d%%\n", volume * 100 / 256);
+			}
+
+			ui_set_status(power, ds.playposition);
 			power_cnt = 0;
 			power = 0;
 		}
@@ -455,6 +482,11 @@ void japlay_play(void)
 	}
 	CURSOR_UNLOCK;
 	kick_playback();
+}
+
+void japlay_set_autovol(bool enabled)
+{
+	autovol = enabled;
 }
 
 void japlay_seek_relative(long msecs)
