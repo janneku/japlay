@@ -2,6 +2,7 @@
  * japlay mikmod MPEG audio decoder plugin
  * Copyright Janne Kulmala 2010
  */
+ #define _GNU_SOURCE
 #include "plugin.h"
 
 #include <stdio.h>
@@ -25,10 +26,12 @@ struct input_plugin_ctx {
 	struct mad_frame frame;
 	struct mad_synth synth;
 	int fd;
+	bool eof;
 	unsigned char buffer[8192];
+	size_t buflen;
 	size_t *seconds;
 	size_t nseconds;
-	bool reliable;
+	bool reliable, streaming;
 };
 
 #define DEFAULT_BYTE_RATE (128000 / 8)
@@ -155,6 +158,35 @@ static size_t estimate(struct input_plugin_ctx *ctx, size_t t)
 	return newpos;
 }
 
+static int wait_on_socket(int fd, bool for_recv, int timeout_ms)
+{
+	struct timeval tv = {.tv_sec = timeout_ms / 1000, .tv_usec = (timeout_ms % 1000) * 1000};
+
+	fd_set infd, outfd;
+	FD_ZERO(&infd);
+	FD_ZERO(&outfd);
+	if (for_recv)
+		FD_SET(fd, &infd);
+	else
+		FD_SET(fd, &outfd);
+
+	while (true) {
+		int ret = select(fd + 1, &infd, &outfd, NULL, &tv);
+		if (ret < 0) {
+			if (errno != EINTR) {
+				printf("select failed (%s)\n", strerror(errno));
+				return -1;
+			}
+			continue;
+		} else if (ret == 0) {
+			printf("connection timeout\n");
+			return -1;
+		}
+		break;
+	}
+	return 0;
+}
+
 static const char *file_ext(const char *filename)
 {
 	size_t i = strlen(filename);
@@ -173,58 +205,170 @@ static bool mad_detect(const char *filename)
 		(ext && !strcasecmp(ext, "mp3"));
 }
 
+/* fill the read buffer */
+static int fillbuf(struct input_plugin_ctx *ctx)
+{
+	if (ctx->streaming) {
+		if (wait_on_socket(ctx->fd, true, 5000))
+			return -1;
+	}
+	while (true) {
+		ssize_t ret = read(ctx->fd, &ctx->buffer[ctx->buflen], sizeof(ctx->buffer) - ctx->buflen);
+		if (ret < 0) {
+			if (errno != EINTR) {
+				printf("read failed (%s)\n", strerror(errno));
+				return -1;
+			}
+			continue;
+		} else if (ret == 0)
+			ctx->eof = true;
+		ctx->buflen += ret;
+		break;
+	}
+	return 0;
+}
+
+static void skipbuf(struct input_plugin_ctx *ctx, size_t offset)
+{
+	ctx->buflen -= offset;
+	memmove(ctx->buffer, &ctx->buffer[offset], ctx->buflen);
+}
+
+static char *trim(char *buf)
+{
+	size_t i = strlen(buf);
+	while (i && isspace(buf[i - 1]))
+		--i;
+	buf[i] = 0;
+	i = 0;
+	while (isspace(buf[i]))
+		++i;
+	return &buf[i];
+}
+
+/* the URL must begin with http:// */
+static int connect_http(struct input_plugin_ctx *ctx, const char *url)
+{
+	ctx->fd = -1;
+	ctx->streaming = true;
+
+	/* parse the URL */
+	size_t i = 0;
+	while (url[i] && url[i] != '/' && url[i] != ':' && !isspace(url[i]))
+		++i;
+	char *host = strndup(url, i);
+
+	int port = 80;
+	if (url[i] == ':') {
+		++i;
+		port = atoi(&url[i]);
+		if (port <= 0 || port >= 0x10000)
+			goto err;
+		while (isdigit(url[i]))
+			++i;
+	}
+
+	const char *path = "/";
+	if (url[i] == '/')
+		path = &url[i];
+
+	in_addr_t addr = inet_addr(host);
+	if (addr == (in_addr_t) -1) {
+		struct hostent *hp = gethostbyname(host);
+		if (!hp)
+			goto err;
+		addr = ((struct in_addr *) hp->h_addr_list[0])->s_addr;
+	}
+
+	ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (ctx->fd < 0)
+		goto err;
+
+	struct sockaddr_in sin;
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = addr;
+	sin.sin_port = htons(port);
+
+	if (connect(ctx->fd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
+		printf("unable to connect (%s)\n", strerror(errno));
+		goto err;
+	}
+
+	if (wait_on_socket(ctx->fd, false, 5000)) {
+		printf("connection timeout\n");
+		goto err;
+	}
+
+	/* send HTTP request */
+	char *req;
+	if (asprintf(&req, "GET %s HTTP/1.0\r\n"
+			   "User-Agent: japlay/1.0\r\n\r\n", path) < 0)
+		goto err;
+	size_t len = strlen(req);
+	if (write(ctx->fd, req, len) < (ssize_t)len) {
+		free(req);
+		goto err;
+	}
+	free(req);
+
+	/* parse HTTP reponse */
+	bool done = false;
+	while (!done) {
+		/* try to read one line */
+		unsigned char *newline;
+		while (true) {
+			newline = memchr(ctx->buffer, '\n', ctx->buflen);
+			if (newline)
+				break;
+			if (ctx->eof)
+				goto err;
+			if (fillbuf(ctx))
+				goto err;
+		}
+		*newline = 0;
+		char *line = trim((char *) ctx->buffer);
+
+		printf("HTTP: %s\n", line);
+
+		const char contype[] = "content-type: ";
+		if (!strncasecmp(line, contype, strlen(contype))) {
+			char *value = trim(&line[strlen(contype)]);
+			if (strcmp(value, "audio/mpeg")) {
+				printf("invalid content type: %s\n", value);
+				goto err;
+			}
+		}
+		else if (*line == 0)
+			done = true;
+
+		skipbuf(ctx, newline - ctx->buffer + 1);
+	}
+
+	free(host);
+	return 0;
+
+ err:
+	free(host);
+	if (ctx->fd >= 0)
+		close(ctx->fd);
+	return -1;
+}
+
 static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 {
+	/* ctx is zeroed by the caller */
+
 	if (!memcmp(filename, "http://", 7)) {
-		size_t i = 7;
-		while (filename[i] && filename[i] != '/' && filename[i] != ':' &&
-		       !isspace(filename[i]))
-			++i;
-		char buf[256];
-		memcpy(buf, &filename[7], i - 7);
-		buf[i - 7] = 0;
-
-		int port = 80;
-		if (filename[i] == ':') {
-			++i;
-			port = atoi(&filename[i]);
-			while (isdigit(filename[i]))
-				++i;
-		}
-
-		const char *path = "/";
-		if (filename[i] == '/')
-			path = &filename[i];
-
-		in_addr_t addr = inet_addr(buf);
-		if (addr == (in_addr_t)-1) {
-			struct hostent *hp = gethostbyname(buf);
-			if (!hp)
-				return -1;
-			addr = ((struct in_addr *)hp->h_addr_list[0])->s_addr;
-		}
-
-		ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
-		if (ctx->fd < 0)
+		if (connect_http(ctx, &filename[7]))
 			return -1;
-
-		struct sockaddr_in sin;
-		sin.sin_family = AF_INET;
-		sin.sin_addr.s_addr = addr;
-		sin.sin_port = htons(port);
-
-		if (connect(ctx->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-			printf("unable to connect (%s)\n", strerror(errno));
-			close(ctx->fd);
-			return -1;
-		}
-
-		sprintf(buf, "GET %s HTTP/1.0\r\n\r\n", path);
-		write(ctx->fd, buf, strlen(buf));
 	} else {
 		ctx->fd = open(filename, O_RDONLY);
 		if (ctx->fd < 0) {
 			printf("unable to open file (%s)\n", strerror(errno));
+			return -1;
+		}
+		if (fillbuf(ctx)) {
+			close(ctx->fd);
 			return -1;
 		}
 	}
@@ -233,8 +377,6 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 	mad_stream_init(&ctx->stream);
 	mad_synth_init(&ctx->synth);
 
-	ctx->seconds = NULL;
-	ctx->nseconds = 0;
 	ctx->reliable = true;
 
 	return 0;
@@ -242,7 +384,8 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 
 static void mad_close(struct input_plugin_ctx *ctx)
 {
-	japlay_set_song_length(estimate_length(ctx) * 1000, false);
+	if (!ctx->streaming)
+		japlay_set_song_length(estimate_length(ctx) * 1000, false);
 	mad_frame_finish(&ctx->frame);
 	mad_stream_finish(&ctx->stream);
 	mad_synth_finish(&ctx->synth);
@@ -282,32 +425,29 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		size_t len = 0;
 		off_t offs;
 
-		if (ctx->stream.next_frame) {
-			len = ctx->stream.bufend - ctx->stream.next_frame;
-			if (len)
-				memcpy(ctx->buffer, ctx->stream.next_frame, len);
-		}
-		ssize_t ret = read(ctx->fd, &ctx->buffer[len], sizeof(ctx->buffer) - len);
-		if (ret < 0) {
-			printf("read failed (%s)\n", strerror(errno));
-			return 0;
-		}
-		len += ret;
+		/* remove decoded data from the read buffer */
+		if (ctx->stream.next_frame)
+			skipbuf(ctx, ctx->stream.next_frame - ctx->buffer);
 
 		offs = lseek(ctx->fd, 0, SEEK_CUR);
 		if (offs == -1)
 			offs = 0;
-		if ((size_t) offs >= len)
-			offs -= len;
+		if ((size_t) offs >= ctx->buflen)
+			offs -= ctx->buflen;
 
-		mad_stream_buffer(&ctx->stream, ctx->buffer, len);
+		mad_stream_buffer(&ctx->stream, ctx->buffer, ctx->buflen);
 
 		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
 			if (ctx->stream.error == MAD_ERROR_BUFLEN) {
-				japlay_set_song_length(japlay_get_position(), ctx->reliable);
-				return 0;
-			}
-			print_mad_error(&ctx->stream);
+				/* not enought data the in read buffer */
+				if (ctx->eof) {
+					japlay_set_song_length(japlay_get_position(), ctx->reliable);
+					return 0;
+				}
+				if (fillbuf(ctx))
+					return 0;
+			} else
+				print_mad_error(&ctx->stream);
 			continue;
 		}
 
@@ -354,7 +494,7 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	size_t t = newpos->msecs / 1000;
 
 	curt = japlay_get_position() / 1000;
-	if (t == curt)
+	if (t == curt || ctx->streaming)
 		return 1;
 
 	offs = recall(ctx, t);
