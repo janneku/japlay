@@ -80,7 +80,7 @@ static char *get_display_name(struct song *song)
 	const char *filename = get_song_filename(song);
 
 	if (!memcmp(filename, "http://", 7))
-		return filename;
+		return strdup(filename);
 	return g_filename_to_utf8(file_base(filename), -1, NULL, NULL, NULL);
 }
 
