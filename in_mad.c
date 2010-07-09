@@ -27,11 +27,20 @@ struct input_plugin_ctx {
 	struct mad_synth synth;
 	int fd;
 	bool eof;
-	unsigned char buffer[8192];
-	size_t buflen;
+	size_t fpos, length;
 	size_t *seconds;
 	size_t nseconds;
 	bool reliable, streaming;
+
+	/* read buffer */
+	unsigned char buffer[8192];
+	size_t buflen;
+
+	/* URL */
+	char *host;
+	const char *path;
+	int port;
+	in_addr_t addr;
 };
 
 #define DEFAULT_BYTE_RATE (128000 / 8)
@@ -78,7 +87,6 @@ static unsigned int estimate_length(struct input_plugin_ctx *ctx)
 	size_t hi_t = 0;
 	size_t avg;
 	size_t length;
-	off_t len = lseek(ctx->fd, 0, SEEK_END);
 
 	if (ctx->nseconds > 0) {
 		/* Find last non-zero offset */
@@ -90,10 +98,10 @@ static unsigned int estimate_length(struct input_plugin_ctx *ctx)
 	}
 	if (hi_fpos > lo_fpos) {
 		avg = (hi_fpos - lo_fpos) / (hi_t - lo_t);
-		length = hi_t + (len - hi_fpos) / avg;
+		length = hi_t + (ctx->length - hi_fpos) / avg;
 	} else {
 		avg = DEFAULT_BYTE_RATE;
-		length = hi_t + (len - hi_fpos) / avg;
+		length = hi_t + (ctx->length - hi_fpos) / avg;
 	}
 
 	return length;
@@ -230,6 +238,7 @@ static int fillbuf(struct input_plugin_ctx *ctx)
 
 static void skipbuf(struct input_plugin_ctx *ctx, size_t offset)
 {
+	ctx->fpos += offset;
 	ctx->buflen -= offset;
 	memmove(ctx->buffer, &ctx->buffer[offset], ctx->buflen);
 }
@@ -246,39 +255,45 @@ static char *trim(char *buf)
 	return &buf[i];
 }
 
-/* the URL must begin with http:// */
-static int connect_http(struct input_plugin_ctx *ctx, const char *url)
+static int parse_url(struct input_plugin_ctx *ctx, const char *url)
 {
-	ctx->fd = -1;
-	ctx->streaming = true;
-
-	/* parse the URL */
 	size_t i = 0;
 	while (url[i] && url[i] != '/' && url[i] != ':' && !isspace(url[i]))
 		++i;
-	char *host = strndup(url, i);
+	ctx->host = strndup(url, i);
 
-	int port = 80;
+	ctx->addr = inet_addr(ctx->host);
+	if (ctx->addr == (in_addr_t) -1) {
+		struct hostent *hp = gethostbyname(ctx->host);
+		if (!hp) {
+			free(ctx->host);
+			return -1;
+		}
+		ctx->addr = ((struct in_addr *) hp->h_addr_list[0])->s_addr;
+	}
+
+	ctx->port = 80;
 	if (url[i] == ':') {
 		++i;
-		port = atoi(&url[i]);
-		if (port <= 0 || port >= 0x10000)
-			goto err;
+		ctx->port = atoi(&url[i]);
+		if (ctx->port <= 0 || ctx->port >= 0x10000)
+			return -1;
 		while (isdigit(url[i]))
 			++i;
 	}
 
-	const char *path = "/";
+	ctx->path = "/";
 	if (url[i] == '/')
-		path = &url[i];
+		ctx->path = &url[i];
 
-	in_addr_t addr = inet_addr(host);
-	if (addr == (in_addr_t) -1) {
-		struct hostent *hp = gethostbyname(host);
-		if (!hp)
-			goto err;
-		addr = ((struct in_addr *) hp->h_addr_list[0])->s_addr;
-	}
+	return 0;
+}
+
+static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
+{
+	ctx->fd = -1;
+	ctx->streaming = true;
+	ctx->buflen = 0;
 
 	ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (ctx->fd < 0)
@@ -286,8 +301,8 @@ static int connect_http(struct input_plugin_ctx *ctx, const char *url)
 
 	struct sockaddr_in sin;
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = addr;
-	sin.sin_port = htons(port);
+	sin.sin_addr.s_addr = ctx->addr;
+	sin.sin_port = htons(ctx->port);
 
 	if (connect(ctx->fd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
 		printf("unable to connect (%s)\n", strerror(errno));
@@ -299,11 +314,23 @@ static int connect_http(struct input_plugin_ctx *ctx, const char *url)
 		goto err;
 	}
 
+	char *range;
+	if (offset) {
+		if (asprintf(&range, "Range: bytes=%zd-%zd\r\n",
+				     offset, ctx->length-1) < 0)
+			goto err;
+	} else
+		range = strdup("");
+
 	/* send HTTP request */
 	char *req;
-	if (asprintf(&req, "GET %s HTTP/1.0\r\n"
-			   "User-Agent: japlay/1.0\r\n\r\n", path) < 0)
+	if (asprintf(&req, "GET %s HTTP/1.1\r\n"
+			   "Host: %s\r\n"
+			   "%s"
+			   "User-Agent: japlay/1.0\r\n\r\n", ctx->path, ctx->host, range) < 0)
 		goto err;
+	free(range);
+
 	size_t len = strlen(req);
 	if (write(ctx->fd, req, len) < (ssize_t)len) {
 		free(req);
@@ -331,24 +358,25 @@ static int connect_http(struct input_plugin_ctx *ctx, const char *url)
 		printf("HTTP: %s\n", line);
 
 		const char contype[] = "content-type: ";
+		const char conlen[] = "content-length: ";
+
 		if (!strncasecmp(line, contype, strlen(contype))) {
 			char *value = trim(&line[strlen(contype)]);
 			if (strcmp(value, "audio/mpeg")) {
 				printf("invalid content type: %s\n", value);
 				goto err;
 			}
-		}
-		else if (*line == 0)
+		} else if (!strncasecmp(line, conlen, strlen(conlen)) && offset == 0) {
+			ctx->length = atol(&line[strlen(conlen)]);
+		} else if (*line == 0)
 			done = true;
 
 		skipbuf(ctx, newline - ctx->buffer + 1);
 	}
-
-	free(host);
+	ctx->fpos = offset;
 	return 0;
 
  err:
-	free(host);
 	if (ctx->fd >= 0)
 		close(ctx->fd);
 	return -1;
@@ -358,8 +386,12 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 {
 	/* ctx is zeroed by the caller */
 
+	ctx->length = (size_t) -1;
+
 	if (!memcmp(filename, "http://", 7)) {
-		if (connect_http(ctx, &filename[7]))
+		if (parse_url(ctx, &filename[7]))
+			return -1;
+		if (connect_http(ctx, 0))
 			return -1;
 	} else {
 		ctx->fd = open(filename, O_RDONLY);
@@ -367,6 +399,9 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 			printf("unable to open file (%s)\n", strerror(errno));
 			return -1;
 		}
+		ctx->length = lseek(ctx->fd, 0, SEEK_END);
+		lseek(ctx->fd, 0, SEEK_SET);
+
 		if (fillbuf(ctx)) {
 			close(ctx->fd);
 			return -1;
@@ -384,7 +419,7 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 
 static void mad_close(struct input_plugin_ctx *ctx)
 {
-	if (!ctx->streaming)
+	if (ctx->length != (size_t) -1)
 		japlay_set_song_length(estimate_length(ctx) * 1000, false);
 	mad_frame_finish(&ctx->frame);
 	mad_stream_finish(&ctx->stream);
@@ -422,18 +457,9 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 {
 	size_t t;
 	while (true) {
-		size_t len = 0;
-		off_t offs;
-
 		/* remove decoded data from the read buffer */
 		if (ctx->stream.next_frame)
 			skipbuf(ctx, ctx->stream.next_frame - ctx->buffer);
-
-		offs = lseek(ctx->fd, 0, SEEK_CUR);
-		if (offs == -1)
-			offs = 0;
-		if ((size_t) offs >= ctx->buflen)
-			offs -= ctx->buflen;
 
 		mad_stream_buffer(&ctx->stream, ctx->buffer, ctx->buflen);
 
@@ -461,7 +487,7 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 
 		mad_synth_frame(&ctx->synth, &ctx->frame);
 
-		len = ctx->synth.pcm.length * format->channels;
+		size_t len = ctx->synth.pcm.length * format->channels;
 
 		if (len > maxlen) {
 			printf("Too small buffer!\n");
@@ -482,7 +508,7 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 
 		t = japlay_get_position() / 1000;
 		if (!recall(ctx, t))
-			remember(ctx, offs, t);
+			remember(ctx, ctx->fpos, t);
 		return len;
 	}
 }
@@ -493,15 +519,25 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	size_t curt;
 	size_t t = newpos->msecs / 1000;
 
+	if (ctx->length == (size_t) -1)
+		return -1;
+
 	curt = japlay_get_position() / 1000;
-	if (t == curt || ctx->streaming)
+	if (t == curt)
 		return 1;
 
 	offs = recall(ctx, t);
 	if (!offs)
 		offs = estimate(ctx, t);
 
-	lseek(ctx->fd, offs, SEEK_SET);
+	if (ctx->streaming) {
+		close(ctx->fd);
+		if (connect_http(ctx, offs))
+			return -1;
+	} else {
+		lseek(ctx->fd, offs, SEEK_SET);
+		ctx->fpos = offs;
+	}
 
 	newpos->msecs = 1000 * t;
 
