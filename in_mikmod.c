@@ -10,6 +10,7 @@
 static bool mikmod_init = false;
 
 struct input_plugin_ctx {
+	struct input_state *state;
 	MODULE *mf;
 };
 
@@ -86,8 +87,11 @@ static MDRIVER drv_dummy = {
 	VC_VoiceRealVolume
 };
 
-static int mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
+static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
+		       const char *filename)
 {
+	ctx->state = state;
+
 	if (!mikmod_init) {
 		mikmod_init = true;
 		MikMod_RegisterAllLoaders();
@@ -105,7 +109,7 @@ static int mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
 		return -1;
 	}
 
-	japlay_set_song_title(ctx->mf->songname);
+	japlay_set_song_title(state, ctx->mf->songname);
 
 	Player_Start(ctx->mf);
 
@@ -124,7 +128,7 @@ static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 	UNUSED(ctx);
 
 	if (!Player_Active()) {
-		japlay_set_song_length(japlay_get_position(), true);
+		japlay_set_song_length(ctx->state, japlay_get_position(ctx->state), true);
 		return 0;
 	}
 

@@ -14,6 +14,7 @@ struct songpos {
 
 #define MIN_FILL	4096 /* minimum buffer length for plugin fillbuf call */
 
+struct input_state;
 struct input_plugin_ctx;
 
 typedef signed short sample_t;
@@ -33,7 +34,8 @@ struct input_plugin {
 
 	/* Try to open the given song file. Context is allocated by the caller.
 	   Return -1 if unable to open the file. */
-	int (*open)(struct input_plugin_ctx *ctx, const char *filename);
+	int (*open)(struct input_plugin_ctx *ctx, struct input_state *state,
+		    const char *filename);
 
 	/* Called when file is closed. Context is allocated by the caller */
 	void (*close)(struct input_plugin_ctx *ctx);
@@ -52,12 +54,13 @@ struct input_plugin {
 struct input_plugin *get_info();
 
 /* Call this to get current position in milliseconds */
-unsigned int japlay_get_position(void);
+unsigned int japlay_get_position(struct input_state *state);
 
 /* Update song length in the playlist. Reliable if false if the length is
    an estimate. */
-void japlay_set_song_length(unsigned int length, bool reliable);
+void japlay_set_song_length(struct input_state *state, unsigned int length,
+			    bool reliable);
 
-void japlay_set_song_title(const char *str);
+void japlay_set_song_title(struct input_state *state, const char *str);
 
 #endif

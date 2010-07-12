@@ -65,7 +65,7 @@ struct plugin {
 	struct input_plugin *info;
 };
 
-struct decode_state {
+struct input_state {
 	struct song *song;
 	struct input_plugin *plugin;
 	struct input_plugin_ctx *ctx;
@@ -78,7 +78,7 @@ struct decode_state {
 	struct audio_buffer buffer;
 };
 
-static struct decode_state ds;
+static struct input_state ds;
 
 struct song *get_cursor(void)
 {
@@ -90,22 +90,23 @@ struct song *get_cursor(void)
 	return song;
 }
 
-void japlay_set_song_length(unsigned int length, bool reliable)
+void japlay_set_song_length(struct input_state *state, unsigned int length,
+			    bool reliable)
 {
-	set_song_length(ds.song, length, reliable ? 100 : 10);
+	set_song_length(state->song, length, reliable ? 100 : 10);
 }
 
-unsigned int japlay_get_position(void)
+unsigned int japlay_get_position(struct input_state *state)
 {
-	return ds.position;
+	return state->position;
 }
 
-void japlay_set_song_title(const char *str)
+void japlay_set_song_title(struct input_state *state, const char *str)
 {
-	set_song_title(ds.song, str);
+	set_song_title(state->song, str);
 	CURSOR_LOCK;
-	if (ds.song == cursor)
-		ui_set_cursor(ds.song, ds.song);
+	if (state->song == cursor)
+		ui_set_cursor(state->song, state->song);
 	CURSOR_UNLOCK;
 }
 
@@ -138,7 +139,7 @@ static void set_cursor(struct song *song)
 	CURSOR_UNLOCK;
 }
 
-static int init_decode(struct decode_state *ds, struct song *song)
+static int init_decode(struct input_state *ds, struct song *song)
 {
 	memset(ds, 0, sizeof(*ds));
 
@@ -153,7 +154,7 @@ static int init_decode(struct decode_state *ds, struct song *song)
 		return -1;
 
 	ds->song = song;
-	if (ds->plugin->open(ds->ctx, filename)) {
+	if (ds->plugin->open(ds->ctx, ds, filename)) {
 		ds->song = NULL;
 		free(ds->ctx);
 		return -1;
@@ -163,14 +164,14 @@ static int init_decode(struct decode_state *ds, struct song *song)
 	return 0;
 }
 
-static void finish_decode(struct decode_state *ds)
+static void finish_decode(struct input_state *ds)
 {
 	ds->plugin->close(ds->ctx);
 	free(ds->ctx);
 	put_song(ds->song);
 }
 
-static void run_decode(struct decode_state *ds)
+static void run_decode(struct input_state *ds)
 {
 	/* decode as much as possible */
 	while (true) {

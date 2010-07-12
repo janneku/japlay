@@ -7,6 +7,7 @@
 #include "common.h"
 
 struct input_plugin_ctx {
+	struct input_state *state;
 	OggVorbis_File vf;
 	bool reliable;
 };
@@ -27,8 +28,11 @@ static bool vorbis_detect(const char *filename)
 	return ext && !strcasecmp(ext, "ogg");
 }
 
-static int vorbis_open(struct input_plugin_ctx *ctx, const char *filename)
+static int vorbis_open(struct input_plugin_ctx *ctx, struct input_state *state,
+		       const char *filename)
 {
+	ctx->state = state;
+
 	FILE *f = fopen(filename, "rb");
 	if (!f)
 		return -1;
@@ -59,7 +63,7 @@ static size_t vorbis_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			continue;
 
 		if (n <= 0) {
-			japlay_set_song_length(japlay_get_position(), ctx->reliable);
+			japlay_set_song_length(ctx->state, japlay_get_position(ctx->state), ctx->reliable);
 			return 0;
 		}
 

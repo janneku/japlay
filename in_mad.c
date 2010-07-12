@@ -22,6 +22,7 @@
 #include <mad.h>
 
 struct input_plugin_ctx {
+	struct input_state *state;
 	struct mad_stream stream;
 	struct mad_frame frame;
 	struct mad_synth synth;
@@ -382,7 +383,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 		} else if (!strncasecmp(line, conlen, strlen(conlen)) && offset == 0) {
 			ctx->length = atol(&line[strlen(conlen)]);
 		} else if (!strncasecmp(line, title, strlen(title))) {
-			japlay_set_song_title(trim(&line[strlen(title)]));
+			japlay_set_song_title(ctx->state, trim(&line[strlen(title)]));
 		} else if (!strncasecmp(line, metaint, strlen(metaint))) {
 			ctx->metainterval = atol(&line[strlen(metaint)]);
 		} else if (*line == 0)
@@ -399,10 +400,12 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 	return -1;
 }
 
-static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
+static int mad_open(struct input_plugin_ctx *ctx, struct input_state *state,
+		    const char *filename)
 {
 	/* ctx is zeroed by the caller */
 
+	ctx->state = state;
 	ctx->length = (size_t) -1;
 
 	if (!memcmp(filename, "http://", 7)) {
@@ -437,7 +440,7 @@ static int mad_open(struct input_plugin_ctx *ctx, const char *filename)
 static void mad_close(struct input_plugin_ctx *ctx)
 {
 	if (ctx->length != (size_t) -1)
-		japlay_set_song_length(estimate_length(ctx) * 1000, false);
+		japlay_set_song_length(ctx->state, estimate_length(ctx) * 1000, false);
 	mad_frame_finish(&ctx->frame);
 	mad_stream_finish(&ctx->stream);
 	mad_synth_finish(&ctx->synth);
@@ -498,7 +501,7 @@ static int read_meta(struct input_plugin_ctx *ctx)
 		char *end = strchr(text, '\'');
 		if (end) {
 			*end = 0;
-			japlay_set_song_title(text);
+			japlay_set_song_title(ctx->state, text);
 		}
 	}
 
@@ -529,7 +532,8 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			if (ctx->stream.error == MAD_ERROR_BUFLEN) {
 				/* not enought data the in read buffer */
 				if (ctx->eof) {
-					japlay_set_song_length(japlay_get_position(), ctx->reliable);
+					japlay_set_song_length(ctx->state,
+						japlay_get_position(ctx->state), ctx->reliable);
 					return 0;
 				}
 				if (fillbuf(ctx))
@@ -567,7 +571,7 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 				buffer[i] = scale(ctx->synth.pcm.samples[0][i]);
 		}
 
-		t = japlay_get_position() / 1000;
+		t = japlay_get_position(ctx->state) / 1000;
 		if (!recall(ctx, t))
 			remember(ctx, ctx->fpos, t);
 		return len;
@@ -583,7 +587,7 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	if (ctx->length == (size_t) -1)
 		return -1;
 
-	curt = japlay_get_position() / 1000;
+	curt = japlay_get_position(ctx->state) / 1000;
 	if (t == curt)
 		return 1;
 
