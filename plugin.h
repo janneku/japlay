@@ -58,4 +58,6 @@ unsigned int japlay_get_position(void);
    an estimate. */
 void japlay_set_song_length(unsigned int length, bool reliable);
 
+void japlay_set_song_title(const char *str);
+
 #endif

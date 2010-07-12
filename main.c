@@ -100,6 +100,11 @@ unsigned int japlay_get_position(void)
 	return ds.position;
 }
 
+void japlay_set_song_title(const char *str)
+{
+	set_song_title(ds.song, str);
+}
+
 static struct input_plugin *detect_plugin(const char *filename)
 {
 	struct list_head *pos;
@@ -143,12 +148,13 @@ static int init_decode(struct decode_state *ds, struct song *song)
 	if (ds->ctx == NULL)
 		return -1;
 
+	ds->song = song;
 	if (ds->plugin->open(ds->ctx, filename)) {
+		ds->song = NULL;
 		free(ds->ctx);
 		return -1;
 	}
-	get_song(song);
-	ds->song = song;
+	get_song(ds->song);
 	init_buffer(&ds->buffer);
 	return 0;
 }

@@ -2,6 +2,7 @@
 #include "common.h"
 #include "ui.h"
 #include "list.h"
+#include "utils.h"
 #include <glib.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -22,7 +23,7 @@ struct song {
 	struct list_head head;
 	bool reliable_length;
 	unsigned int refcount, length;
-	char *filename;
+	char *filename, *title;
 	struct song_ui_ctx *ui_ctx;
 };
 
@@ -34,6 +35,13 @@ struct song_ui_ctx *get_song_ui_ctx(struct song *song)
 const char *get_song_filename(struct song *song)
 {
 	return song->filename;
+}
+
+char *get_song_title(struct song *song)
+{
+	if (song->title)
+		return strdup(song->title);
+	return NULL;
 }
 
 unsigned int get_song_length(struct song *song)
@@ -67,6 +75,8 @@ void put_song(struct song *song)
 	song->refcount--;
 	if (!song->refcount) {
 		free(song->filename);
+		if (song->title)
+			free(song->title);
 		free(song->ui_ctx);
 		free(song);
 	}
@@ -80,6 +90,15 @@ void set_song_length(struct song *song, unsigned int length, bool reliable)
 		song->reliable_length = reliable;
 		ui_update_playlist(song);
 	}
+}
+
+void set_song_title(struct song *song, const char *str)
+{
+	/* TODO: locking */
+	if (song->title)
+		free(song->title);
+	song->title = strdup(str);
+	ui_update_playlist(song);
 }
 
 struct song *playlist_next(struct song *song, bool forward)

@@ -357,8 +357,9 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 
 		printf("HTTP: %s\n", line);
 
-		const char contype[] = "content-type: ";
-		const char conlen[] = "content-length: ";
+		const char contype[] = "content-type:";
+		const char conlen[] = "content-length:";
+		const char title[] = "icy-name:";
 
 		if (!strncasecmp(line, contype, strlen(contype))) {
 			char *value = trim(&line[strlen(contype)]);
@@ -368,6 +369,8 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 			}
 		} else if (!strncasecmp(line, conlen, strlen(conlen)) && offset == 0) {
 			ctx->length = atol(&line[strlen(conlen)]);
+		} else if (!strncasecmp(line, title, strlen(title))) {
+			japlay_set_song_title(trim(&line[strlen(title)]));
 		} else if (*line == 0)
 			done = true;
 

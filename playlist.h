@@ -9,12 +9,14 @@ struct song_ui_ctx;
 /* Getters: */
 struct song_ui_ctx *get_song_ui_ctx(struct song *song);
 const char *get_song_filename(struct song *song);
+char *get_song_title(struct song *song);
 unsigned int get_song_length(struct song *song);
 
 struct song *new_song(const char *filename);
 void get_song(struct song *song);
 void put_song(struct song *song);
 void set_song_length(struct song *song, unsigned int length, bool reliable);
+void set_song_title(struct song *song, const char *str);
 struct song *playlist_next(struct song *song, bool forward);
 struct song *get_playlist_first(void);
 void add_playlist(struct song *song);
