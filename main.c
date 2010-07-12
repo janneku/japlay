@@ -35,17 +35,21 @@ int debug = 0;
 
 static pthread_mutex_t cursor_mutex;
 
+static pthread_t playback_thread;
 static pthread_mutex_t play_mutex;
 static pthread_cond_t play_cond;
-static bool playing = false; /* true if we are cursor */
+static bool playing = false; /* true if we are playing a song */
+
+static pthread_t scan_thread;
+static pthread_mutex_t scan_mutex;
+static pthread_cond_t scan_cond;
+static bool scanning = false; /* true if we are scanning the playlist */
 
 static bool reset = false;
 static bool quit = false;
 
 static struct list_head plugins;
 static struct song *cursor = NULL;
-
-static pthread_t playback_thread;
 
 static bool autovol = false;
 static int volume = 256;
@@ -59,6 +63,10 @@ static long toseek = 0;
 /* Protects "playing" variable and play_cond */
 #define PLAY_LOCK pthread_mutex_lock(&play_mutex)
 #define PLAY_UNLOCK pthread_mutex_unlock(&play_mutex)
+
+/* Protects "scanning" variable and scan_cond */
+#define SCAN_LOCK pthread_mutex_lock(&scan_mutex)
+#define SCAN_UNLOCK pthread_mutex_unlock(&scan_mutex)
 
 struct plugin {
 	struct list_head head;
@@ -137,6 +145,33 @@ static void set_cursor(struct song *song)
 	CURSOR_LOCK;
 	set_cursor_locked(song);
 	CURSOR_UNLOCK;
+}
+
+int get_song_info(struct song *song)
+{
+	struct input_state ds;
+	memset(&ds, 0, sizeof(ds));
+
+	const char *filename = get_song_filename(song);
+
+	ds.plugin = detect_plugin(filename);
+	if (ds.plugin == NULL)
+		return -1;
+
+	ds.ctx = calloc(1, ds.plugin->ctx_size);
+	if (ds.ctx == NULL)
+		return -1;
+
+	ds.song = song;
+	if (ds.plugin->open(ds.ctx, &ds, filename)) {
+		ds.song = NULL;
+		free(ds.ctx);
+		return -1;
+	}
+
+	ds.plugin->close(ds.ctx);
+	free(ds.ctx);
+	return 0;
 }
 
 static int init_decode(struct input_state *ds, struct song *song)
@@ -386,6 +421,27 @@ static void *playback_thread_routine(void *arg)
 	return NULL;
 }
 
+static void *scan_thread_routine(void *arg)
+{
+	UNUSED(arg);
+
+	while (!quit) {
+		SCAN_LOCK;
+		if (!scanning) {
+			/* we are not currently scanning, sleep */
+			pthread_cond_wait(&scan_cond, &scan_mutex);
+			SCAN_UNLOCK;
+			continue;
+		}
+		SCAN_UNLOCK;
+
+		scan_playlist();
+		scanning = false;
+	}
+
+	return NULL;
+}
+
 static char *trim(char *buf)
 {
 	size_t i = strlen(buf);
@@ -497,6 +553,14 @@ static void kick_playback(void)
 	playing = true;
 	pthread_cond_signal(&play_cond);
 	PLAY_UNLOCK;
+}
+
+void start_playlist_scan(void)
+{
+	SCAN_LOCK;
+	scanning = true;
+	pthread_cond_signal(&scan_cond);
+	SCAN_UNLOCK;
 }
 
 void play_playlist(struct song *song)
@@ -712,8 +776,11 @@ int japlay_init(int *argc, char **argv)
 
 	pthread_mutex_init(&play_mutex, NULL);
 	pthread_cond_init(&play_cond, NULL);
-
 	pthread_create(&playback_thread, NULL, playback_thread_routine, NULL);
+
+	pthread_mutex_init(&scan_mutex, NULL);
+	pthread_cond_init(&scan_cond, NULL);
+	pthread_create(&scan_thread, NULL, scan_thread_routine, NULL);
 
 	int fd = unix_socket_create(SOCKET_NAME);
 	if (fd >= 0)
@@ -727,7 +794,9 @@ void japlay_exit(void)
 	quit = true;
 	void *retval;
 	kick_playback();
+	start_playlist_scan();
 	pthread_join(playback_thread, &retval);
+	pthread_join(scan_thread, &retval);
 
 	unlink(SOCKET_NAME);
 }

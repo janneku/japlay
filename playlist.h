@@ -23,6 +23,7 @@ void add_playlist(struct song *song);
 void remove_playlist(struct song *song);
 void clear_playlist(void);
 void shuffle_playlist(void);
+void scan_playlist(void);
 bool save_playlist_m3u(const char *filename);
 void init_playlist(void);
 

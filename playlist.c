@@ -1,5 +1,6 @@
 #include "playlist.h"
 #include "common.h"
+#include "japlay.h"
 #include "ui.h"
 #include "list.h"
 #include "utils.h"
@@ -198,6 +199,28 @@ void shuffle_playlist(void)
 	}
 	free(table);
 	PLAYLIST_UNLOCK;
+}
+
+void scan_playlist(void)
+{
+	struct list_head *pos;
+
+	PLAYLIST_LOCK;
+	struct song **table = malloc(sizeof(void *) * playlist_len);
+	unsigned int len = 0;
+	list_for_each(pos, &playlist) {
+		struct song *song = container_of(pos, struct song, head);
+		get_song(song);
+		table[len++] = song;
+	}
+	PLAYLIST_UNLOCK;
+
+	unsigned int i;
+	for (i = 0; i < len; ++i) {
+		get_song_info(table[i]);
+		put_song(table[i]);
+	}
+	free(table);
 }
 
 bool save_playlist_m3u(const char *filename)

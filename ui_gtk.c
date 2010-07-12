@@ -251,6 +251,13 @@ static void shuffle_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
 	shuffle_playlist();
 }
 
+static void scan_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
+{
+	UNUSED(menuitem);
+	UNUSED(ptr);
+	start_playlist_scan();
+}
+
 static void append_rr_list(GtkTreePath *path, GList **rowref_list)
 {
 	GtkTreeRowReference *rowref = gtk_tree_row_reference_new(
@@ -431,6 +438,10 @@ int main(int argc, char **argv)
 
 	item = gtk_menu_item_new_with_label("Shuffle playlist");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(shuffle_playlist_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
+	item = gtk_menu_item_new_with_label("Scan playlist");
+	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(scan_playlist_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("Quit");
