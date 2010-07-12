@@ -41,6 +41,9 @@ struct input_plugin_ctx {
 	const char *path;
 	int port;
 	in_addr_t addr;
+
+	/* HTTP stream metadata */
+	size_t metainterval, metapos;
 };
 
 #define DEFAULT_BYTE_RATE (128000 / 8)
@@ -213,34 +216,40 @@ static bool mad_detect(const char *filename)
 		(ext && !strcasecmp(ext, "mp3"));
 }
 
-/* fill the read buffer */
-static int fillbuf(struct input_plugin_ctx *ctx)
+static size_t safe_read(struct input_plugin_ctx *ctx, void *buf, size_t maxlen)
 {
 	if (ctx->streaming) {
 		if (wait_on_socket(ctx->fd, true, 5000))
-			return -1;
+			return 0;
 	}
 	while (true) {
-		ssize_t ret = read(ctx->fd, &ctx->buffer[ctx->buflen], sizeof(ctx->buffer) - ctx->buflen);
+		ssize_t ret = read(ctx->fd, buf, maxlen);
 		if (ret < 0) {
 			if (errno != EINTR) {
 				printf("read failed (%s)\n", strerror(errno));
-				return -1;
+				return 0;
 			}
 			continue;
 		} else if (ret == 0)
 			ctx->eof = true;
-		ctx->buflen += ret;
-		break;
+		return ret;
 	}
+}
+
+/* fill the read buffer */
+static int fillbuf(struct input_plugin_ctx *ctx)
+{
+	size_t len = safe_read(ctx, &ctx->buffer[ctx->buflen], sizeof(ctx->buffer) - ctx->buflen);
+	if (len == 0)
+		return -1;
+	ctx->buflen += len;
 	return 0;
 }
 
-static void skipbuf(struct input_plugin_ctx *ctx, size_t offset)
+static void skipbuf(struct input_plugin_ctx *ctx, size_t pos, size_t len)
 {
-	ctx->fpos += offset;
-	ctx->buflen -= offset;
-	memmove(ctx->buffer, &ctx->buffer[offset], ctx->buflen);
+	ctx->buflen -= len;
+	memmove(&ctx->buffer[pos], &ctx->buffer[pos + len], ctx->buflen - pos);
 }
 
 static char *trim(char *buf)
@@ -294,6 +303,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 	ctx->fd = -1;
 	ctx->streaming = true;
 	ctx->buflen = 0;
+	ctx->metainterval = 0;
 
 	ctx->fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (ctx->fd < 0)
@@ -326,6 +336,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 	char *req;
 	if (asprintf(&req, "GET %s HTTP/1.1\r\n"
 			   "Host: %s\r\n"
+			   "Icy-MetaData:1\r\n"
 			   "%s"
 			   "User-Agent: japlay/1.0\r\n\r\n", ctx->path, ctx->host, range) < 0)
 		goto err;
@@ -360,6 +371,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 		const char contype[] = "content-type:";
 		const char conlen[] = "content-length:";
 		const char title[] = "icy-name:";
+		const char metaint[] = "icy-metaint:";
 
 		if (!strncasecmp(line, contype, strlen(contype))) {
 			char *value = trim(&line[strlen(contype)]);
@@ -371,12 +383,14 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 			ctx->length = atol(&line[strlen(conlen)]);
 		} else if (!strncasecmp(line, title, strlen(title))) {
 			japlay_set_song_title(trim(&line[strlen(title)]));
+		} else if (!strncasecmp(line, metaint, strlen(metaint))) {
+			ctx->metainterval = atol(&line[strlen(metaint)]);
 		} else if (*line == 0)
 			done = true;
 
-		skipbuf(ctx, newline - ctx->buffer + 1);
+		skipbuf(ctx, 0, newline - ctx->buffer + 1);
 	}
-	ctx->fpos = offset;
+	ctx->metapos = ctx->metainterval;
 	return 0;
 
  err:
@@ -455,15 +469,60 @@ static void print_mad_error(const struct mad_stream *stream)
 	printf("MAD error: %s\n", mad_stream_errorstr(stream));
 }
 
+static int read_meta(struct input_plugin_ctx *ctx)
+{
+	size_t metalen = ctx->buffer[ctx->metapos] * 16 + 1;
+	char meta[4096];
+
+	size_t i = ctx->buflen - ctx->metapos;
+	if (i > metalen)
+		i = metalen;
+	memcpy(meta, &ctx->buffer[ctx->metapos], i);
+	skipbuf(ctx, ctx->metapos, i);
+
+	while (i < metalen) {
+		size_t len = safe_read(ctx, &meta[i], metalen - i);
+		if (len == 0)
+			return -1;
+		i += len;
+	}
+	meta[metalen] = 0;
+
+	printf("HTTP stream metadata: %s\n", &meta[1]);
+
+	/* TODO: better parser */
+
+	const char title[] = "StreamTitle='";
+	if (!strncasecmp(&meta[1], title, strlen(title))) {
+		char *text = &meta[1 + strlen(title)];
+		char *end = strchr(text, '\'');
+		if (end) {
+			*end = 0;
+			japlay_set_song_title(text);
+		}
+	}
+
+	ctx->metapos += ctx->metainterval;
+	return 0;
+}
+
 static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			  size_t maxlen, struct input_format *format)
 {
-	size_t t;
+	size_t t, len;
 	while (true) {
 		/* remove decoded data from the read buffer */
-		if (ctx->stream.next_frame)
-			skipbuf(ctx, ctx->stream.next_frame - ctx->buffer);
+		if (ctx->stream.next_frame) {
+			size_t len = ctx->stream.next_frame - ctx->buffer;
+			ctx->fpos += len;
+			ctx->metapos -= len;
+			skipbuf(ctx, 0, len);
+		}
 
+		if (ctx->metainterval && ctx->metapos < ctx->buflen) {
+			if (read_meta(ctx))
+				return 0;
+		}
 		mad_stream_buffer(&ctx->stream, ctx->buffer, ctx->buflen);
 
 		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
@@ -490,8 +549,7 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 
 		mad_synth_frame(&ctx->synth, &ctx->frame);
 
-		size_t len = ctx->synth.pcm.length * format->channels;
-
+		len = ctx->synth.pcm.length * format->channels;
 		if (len > maxlen) {
 			printf("Too small buffer!\n");
 			return 0;
@@ -537,10 +595,9 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 		close(ctx->fd);
 		if (connect_http(ctx, offs))
 			return -1;
-	} else {
+	} else
 		lseek(ctx->fd, offs, SEEK_SET);
-		ctx->fpos = offs;
-	}
+	ctx->fpos = offs;
 
 	newpos->msecs = 1000 * t;
 
