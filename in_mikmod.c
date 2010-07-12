@@ -105,6 +105,8 @@ static int mikmod_open(struct input_plugin_ctx *ctx, const char *filename)
 		return -1;
 	}
 
+	japlay_set_song_title(ctx->mf->songname);
+
 	Player_Start(ctx->mf);
 
 	return 0;
