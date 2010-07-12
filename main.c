@@ -103,6 +103,10 @@ unsigned int japlay_get_position(void)
 void japlay_set_song_title(const char *str)
 {
 	set_song_title(ds.song, str);
+	CURSOR_LOCK;
+	if (ds.song == cursor)
+		ui_set_cursor(ds.song, ds.song);
+	CURSOR_UNLOCK;
 }
 
 static struct input_plugin *detect_plugin(const char *filename)
