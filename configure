@@ -1,27 +1,34 @@
 #!/bin/sh
 
 prefix=/usr/local
-libpath=$prefix/lib
+libpath=""
 
 for opt in "$@" ; do
 	case $opt in
 	--prefix=*)
 		prefix=$(echo $opt | sed -n 's/--prefix=\(.*\)/\1/p')
-		libpath=$prefix/lib
 		;;
 	--lib-path=*)
 		libpath=$(echo $opt | sed -n 's/--lib-path=\(.*\)/\1/p')
+		;;
+	--home)
+		prefix="$HOME"
 		;;
 	--help)
 		echo ""
 		echo "Valid options are:"
 		echo "--lib-path=dir         Install libraries to 'dir'"
 		echo "--prefix=dir           Install to prefix 'dir'"
+		echo "--home                 Set prefix to \$HOME (install to user's home dir)"
 		echo "                       but copy files to 'dest/prefix' on make install"
 		exit
 		;;
 	esac
 done
+
+if test -z "$libpath" ; then
+    libpath="$prefix/lib"
+fi
 
 if test -z "$CC" ; then
     CC=gcc
