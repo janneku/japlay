@@ -11,8 +11,7 @@ int get_song_info(struct song *song);
 
 struct song *add_file_playlist(const char *filename);
 
-bool load_playlist_pls(const char *filename);
-bool load_playlist_m3u(const char *filename);
+int load_playlist(const char *filename);
 
 void play_playlist(struct song *song);
 

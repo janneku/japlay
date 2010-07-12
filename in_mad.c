@@ -629,7 +629,7 @@ static struct input_plugin plugin_info = {
 };
 
 
-struct input_plugin *get_info()
+struct input_plugin *get_input_plugin()
 {
 	return &plugin_info;
 }

@@ -51,7 +51,21 @@ struct input_plugin {
 	int (*seek)(struct input_plugin_ctx *ctx, struct songpos *newpos);
 };
 
-struct input_plugin *get_info();
+struct playlist_plugin {
+	/* Size of this structure, used for versioning */
+	size_t size;
+
+	/* Check if the plugin can handle the given file */
+	bool (*detect)(const char *filename);
+
+	/* Name of the plugin */
+	const char *name;
+
+	int (*load)(const char *filename);
+};
+
+struct input_plugin *get_input_plugin();
+struct playlist_plugin *get_playlist_plugin();
 
 /* Getters: */
 struct song *get_input_song(struct input_state *state);

@@ -96,3 +96,15 @@ char *build_filename(const char *orig, const char *filename)
 	free(dir);
 	return name;
 }
+
+char *trim(char *buf)
+{
+	size_t i = strlen(buf);
+	while (i && isspace(buf[i - 1]))
+		--i;
+	buf[i] = 0;
+	i = 0;
+	while (isspace(buf[i]))
+		++i;
+	return &buf[i];
+}

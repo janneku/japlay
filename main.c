@@ -48,7 +48,9 @@ static bool scanning = false; /* true if we are scanning the playlist */
 static bool reset = false;
 static bool quit = false;
 
-static struct list_head plugins;
+static struct list_head input_plugins;
+static struct list_head playlist_plugins;
+
 static struct song *cursor = NULL;
 
 static bool autovol = false;
@@ -68,9 +70,14 @@ static long toseek = 0;
 #define SCAN_LOCK pthread_mutex_lock(&scan_mutex)
 #define SCAN_UNLOCK pthread_mutex_unlock(&scan_mutex)
 
-struct plugin {
+struct input_plugin_item {
 	struct list_head head;
 	struct input_plugin *info;
+};
+
+struct playlist_plugin_item {
+	struct list_head head;
+	struct playlist_plugin *info;
 };
 
 struct input_state {
@@ -108,11 +115,25 @@ unsigned int japlay_get_position(struct input_state *state)
 	return state->position;
 }
 
-static struct input_plugin *detect_plugin(const char *filename)
+static struct input_plugin *detect_input_plugin(const char *filename)
 {
 	struct list_head *pos;
-	list_for_each(pos, &plugins) {
-		struct plugin *plugin = container_of(pos, struct plugin, head);
+	list_for_each(pos, &input_plugins) {
+		struct input_plugin_item *plugin
+			= container_of(pos, struct input_plugin_item, head);
+		if (plugin->info->detect(filename))
+			return plugin->info;
+	}
+	warning("no plugin for file %s\n", filename);
+	return NULL;
+}
+
+static struct playlist_plugin *detect_playlist_plugin(const char *filename)
+{
+	struct list_head *pos;
+	list_for_each(pos, &playlist_plugins) {
+		struct playlist_plugin_item *plugin
+			= container_of(pos, struct playlist_plugin_item, head);
 		if (plugin->info->detect(filename))
 			return plugin->info;
 	}
@@ -144,7 +165,7 @@ int get_song_info(struct song *song)
 
 	const char *filename = get_song_filename(song);
 
-	ds.plugin = detect_plugin(filename);
+	ds.plugin = detect_input_plugin(filename);
 	if (ds.plugin == NULL)
 		return -1;
 
@@ -170,7 +191,7 @@ static int init_input(struct input_state *ds, struct song *song)
 
 	const char *filename = get_song_filename(song);
 
-	ds->plugin = detect_plugin(filename);
+	ds->plugin = detect_input_plugin(filename);
 	if (ds->plugin == NULL)
 		return -1;
 
@@ -432,18 +453,6 @@ static void *scan_thread_routine(void *arg)
 	return NULL;
 }
 
-static char *trim(char *buf)
-{
-	size_t i = strlen(buf);
-	while (i && isspace(buf[i - 1]))
-		--i;
-	buf[i] = 0;
-	i = 0;
-	while (isspace(buf[i]))
-		++i;
-	return &buf[i];
-}
-
 struct song *add_file_playlist(const char *filename)
 {
 	char *path = absolute_path(filename);
@@ -456,85 +465,12 @@ struct song *add_file_playlist(const char *filename)
 	return song;
 }
 
-bool load_playlist_pls(const char *filename)
+int load_playlist(const char *filename)
 {
-	FILE *f = fopen(filename, "r");
-	if (!f)
-		return false;
-
-	char row[512];
-	while (fgets(row, sizeof(row), f)) {
-		char *value = strchr(row, '=');
-		if (value == NULL)
-			continue;
-		*value = 0;
-		value++;
-		if (!memcmp(trim(row), "File", 4)) {
-			char *fname = build_filename(filename, trim(value));
-			if (fname) {
-				struct song *song = add_file_playlist(fname);
-				if (song)
-					put_song(song);
-				free(fname);
-			}
-		}
-	}
-	fclose(f);
-	return true;
-}
-
-bool load_playlist_m3u(const char *filename)
-{
-	FILE *f = fopen(filename, "r");
-	if (!f)
-		return false;
-
-	/* info extension */
-	char *title = NULL;
-	unsigned int length = -1;
-
-	char row[512];
-	while (fgets(row, sizeof(row), f)) {
-		const char extinf[] = "#EXTINF:";
-
-		if (row[0] != '#') {
-			char *fname = build_filename(filename, trim(row));
-			if (fname == NULL)
-				continue;
-			struct song *song = add_file_playlist(fname);
-			if (song) {
-				if (title)
-					set_song_title(song, title);
-				if (length != (unsigned int) -1)
-					set_song_length(song, length * 1000, 20);
-				put_song(song);
-			}
-			if (title)
-				free(title);
-			free(fname);
-			title = NULL;
-			length = -1;
-
-		} else if(!strncmp(row, extinf, strlen(extinf))) {
-			char *comma = strchr(row, ',');
-			if (comma) {
-				*comma = 0;
-				comma++;
-			}
-			char *len = &row[strlen(extinf)];
-			if (isdigit(*len))
-				length = atoi(len);
-			if (comma) {
-				if (title)
-					free(title);
-				title = strdup(trim(comma));
-			}
-		}
-	}
-	if (title)
-		free(title);
-	fclose(f);
-	return true;
+	struct playlist_plugin *plugin = detect_playlist_plugin(filename);
+	if (plugin == NULL)
+		return -1;
+	return plugin->load(filename);
 }
 
 static void kick_playback(void)
@@ -621,34 +557,43 @@ static bool load_plugin(const char *filename)
 	if (dl == NULL)
 		return false;
 
-	struct input_plugin *(*get_info)(void) = dlsym(dl, "get_info");
-	if (get_info == NULL) {
-		warning("Not a japlay plugin: %s\n", file_base(filename));
-		goto err;
+	struct input_plugin *(*get_input_plugin)(void)
+		= dlsym(dl, "get_input_plugin");
+	if (get_input_plugin != NULL) {
+		struct input_plugin *info = get_input_plugin();
+
+		if (info->seek == NULL)
+			info->seek = dummy_seek;
+
+		info("found input plugin: %s (%s)\n", file_base(filename), info->name);
+
+		struct input_plugin_item *plugin = NEW(struct input_plugin_item);
+		if (plugin != NULL) {
+			plugin->info = info;
+			list_add_tail(&plugin->head, &input_plugins);
+		}
 	}
 
-	struct input_plugin *info = get_info();
+	struct playlist_plugin *(*get_playlist_plugin)(void)
+		= dlsym(dl, "get_playlist_plugin");
+	if (get_playlist_plugin != NULL) {
+		struct playlist_plugin *info = get_playlist_plugin();
 
-	if (info->seek == NULL)
-		info->seek = dummy_seek;
+		info("found playlist plugin: %s (%s)\n", file_base(filename), info->name);
 
-	info("found plugin: %s (%s)\n", file_base(filename), info->name);
-
-	struct plugin *plugin = NEW(struct plugin);
-	if (plugin == NULL)
-		goto err;
-	plugin->info = info;
-	list_add_tail(&plugin->head, &plugins);
+		struct playlist_plugin_item *plugin = NEW(struct playlist_plugin_item);
+		if (plugin != NULL) {
+			plugin->info = info;
+			list_add_tail(&plugin->head, &playlist_plugins);
+		}
+	}
 	return true;
-
- err:
-	dlclose(dl);
-	return false;
 }
 
 static void load_plugins(void)
 {
-	list_init(&plugins);
+	list_init(&input_plugins);
+	list_init(&playlist_plugins);
 
 	DIR *dir = opendir(PLUGIN_DIR);
 	if (!dir)

@@ -202,19 +202,11 @@ void ui_show_message(const char *msg)
 static void add_one_file(char *filename, gpointer ptr)
 {
 	UNUSED(ptr);
-	const char *ext = file_ext(filename);
-	if (ext) {
-		if (!strcasecmp(ext, "pls"))
-			load_playlist_pls(filename);
-		else if (!strcasecmp(ext, "m3u"))
-			load_playlist_m3u(filename);
-		else {
-			struct song *song = add_file_playlist(filename);
-			if (song)
-				put_song(song);
-		}
-	} else
-		add_file_playlist(filename);
+	if (load_playlist(filename)) {
+		struct song *song = add_file_playlist(filename);
+		if (song)
+			put_song(song);
+	}
 	g_free(filename);
 }
 
@@ -510,7 +502,7 @@ int main(int argc, char **argv)
 
 	char *playlistpath = get_config_name("playlist_store.m3u");
 	if (playlistpath)
-		load_playlist_m3u(playlistpath);
+		load_playlist(playlistpath);
 
 	for (i = 1; i < argc; ++i)
 		add_file_playlist(argv[i]);

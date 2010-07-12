@@ -9,7 +9,7 @@ PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 OBJ = main.o utils.o playlist.o iowatch.o unixsocket.o buffer.o
 PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o
 GTK_BINARY = japlay
-PLUGINS = in_mad.so in_mikmod.so in_vorbis.so
+PLUGINS = in_mad.so in_mikmod.so in_vorbis.so pl_m3u.so pl_pls.so
 
 all: $(GTK_BINARY) $(PLUGINS)
 
@@ -26,6 +26,12 @@ in_vorbis.o:	in_vorbis.c
 
 ui_gtk.o:	ui_gtk.c
 	$(CC) $(CFLAGS) `pkg-config gtk+-2.0 --cflags` -c $<
+
+pl_m3u.o:	pl_m3u.c
+	$(CC) $(PLUGIN_CFLAGS) -c $<
+
+pl_pls.o:	pl_pls.c
+	$(CC) $(PLUGIN_CFLAGS) -c $<
 
 %.o:	%.c
 	$(CC) $(CFLAGS) -c $<
@@ -49,3 +55,9 @@ in_mikmod.so:	in_mikmod.o
 
 in_vorbis.so:	in_vorbis.o
 	$(CC) in_vorbis.o -o $@ $(PLUGIN_LDFLAGS) `pkg-config vorbisfile --libs`
+
+pl_m3u.so:	pl_m3u.o
+	$(CC) pl_m3u.o -o $@ $(PLUGIN_LDFLAGS)
+
+pl_pls.so:	pl_pls.o
+	$(CC) pl_pls.o -o $@ $(PLUGIN_LDFLAGS)
