@@ -3,6 +3,7 @@
  * Copyright Janne Kulmala 2010
  */
 #include "common.h"
+#include "playlist.h"
 #include "plugin.h"
 #include <vorbis/vorbisfile.h>
 
@@ -63,7 +64,9 @@ static size_t vorbis_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			continue;
 
 		if (n <= 0) {
-			japlay_set_song_length(ctx->state, japlay_get_position(ctx->state), ctx->reliable);
+			set_song_length(get_input_song(ctx->state),
+					japlay_get_position(ctx->state),
+					ctx->reliable ? 100 : 10);
 			return 0;
 		}
 

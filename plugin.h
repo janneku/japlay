@@ -59,11 +59,4 @@ struct song *get_input_song(struct input_state *state);
 /* Call this to get current position in milliseconds */
 unsigned int japlay_get_position(struct input_state *state);
 
-/* Update song length in the playlist. Reliable if false if the length is
-   an estimate. */
-void japlay_set_song_length(struct input_state *state, unsigned int length,
-			    bool reliable);
-
-void japlay_set_song_title(struct input_state *state, const char *str);
-
 #endif

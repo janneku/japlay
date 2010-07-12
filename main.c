@@ -103,24 +103,9 @@ struct song *get_input_song(struct input_state *state)
 	return state->song;
 }
 
-void japlay_set_song_length(struct input_state *state, unsigned int length,
-			    bool reliable)
-{
-	set_song_length(state->song, length, reliable ? 100 : 10);
-}
-
 unsigned int japlay_get_position(struct input_state *state)
 {
 	return state->position;
-}
-
-void japlay_set_song_title(struct input_state *state, const char *str)
-{
-	set_song_title(state->song, str);
-	CURSOR_LOCK;
-	if (state->song == cursor)
-		ui_set_cursor(state->song, state->song);
-	CURSOR_UNLOCK;
 }
 
 static struct input_plugin *detect_plugin(const char *filename)

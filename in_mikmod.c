@@ -3,6 +3,7 @@
  * Copyright Janne Kulmala 2010
  */
 #include "common.h"
+#include "playlist.h"
 #include "plugin.h"
 #include <mikmod.h>
 
@@ -108,7 +109,7 @@ static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
 		return -1;
 	}
 
-	japlay_set_song_title(state, ctx->mf->songname);
+	set_song_title(get_input_song(state), ctx->mf->songname);
 
 	Player_Start(ctx->mf);
 
@@ -127,7 +128,8 @@ static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 	UNUSED(ctx);
 
 	if (!Player_Active()) {
-		japlay_set_song_length(ctx->state, japlay_get_position(ctx->state), true);
+		set_song_length(get_input_song(ctx->state),
+				japlay_get_position(ctx->state), 100);
 		return 0;
 	}
 

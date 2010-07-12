@@ -4,6 +4,7 @@
  */
  #define _GNU_SOURCE
 #include "plugin.h"
+#include "playlist.h"
 #include "common.h"
 #include <string.h>
 #include <stdlib.h>
@@ -381,7 +382,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 		} else if (!strncasecmp(line, conlen, strlen(conlen)) && offset == 0) {
 			ctx->length = atol(&line[strlen(conlen)]);
 		} else if (!strncasecmp(line, title, strlen(title))) {
-			japlay_set_song_title(ctx->state, trim(&line[strlen(title)]));
+			set_song_title(get_input_song(ctx->state), trim(&line[strlen(title)]));
 		} else if (!strncasecmp(line, metaint, strlen(metaint))) {
 			ctx->metainterval = atol(&line[strlen(metaint)]);
 		} else if (*line == 0)
@@ -437,8 +438,10 @@ static int mad_open(struct input_plugin_ctx *ctx, struct input_state *state,
 
 static void mad_close(struct input_plugin_ctx *ctx)
 {
-	if (ctx->length != (size_t) -1)
-		japlay_set_song_length(ctx->state, estimate_length(ctx) * 1000, false);
+	if (ctx->length != (size_t) -1) {
+		set_song_length(get_input_song(ctx->state),
+				estimate_length(ctx) * 1000, 10);
+	}
 	mad_frame_finish(&ctx->frame);
 	mad_stream_finish(&ctx->stream);
 	mad_synth_finish(&ctx->synth);
@@ -499,7 +502,7 @@ static int read_meta(struct input_plugin_ctx *ctx)
 		char *end = strchr(text, '\'');
 		if (end) {
 			*end = 0;
-			japlay_set_song_title(ctx->state, text);
+			set_song_title(get_input_song(ctx->state), text);
 		}
 	}
 
@@ -530,8 +533,9 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			if (ctx->stream.error == MAD_ERROR_BUFLEN) {
 				/* not enought data the in read buffer */
 				if (ctx->eof) {
-					japlay_set_song_length(ctx->state,
-						japlay_get_position(ctx->state), ctx->reliable);
+					set_song_length(get_input_song(ctx->state),
+						japlay_get_position(ctx->state),
+						ctx->reliable ? 100 : 10);
 					return 0;
 				}
 				if (fillbuf(ctx))
