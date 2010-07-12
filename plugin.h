@@ -53,6 +53,9 @@ struct input_plugin {
 
 struct input_plugin *get_info();
 
+/* Getters: */
+struct song *get_input_song(struct input_state *state);
+
 /* Call this to get current position in milliseconds */
 unsigned int japlay_get_position(struct input_state *state);
 

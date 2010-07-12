@@ -4,7 +4,6 @@
 #include <stdbool.h> /* bool */
 
 struct song;
-struct input_plugin;
 
 struct song *get_cursor(void);
 

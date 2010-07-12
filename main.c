@@ -31,7 +31,7 @@
 
 #define TARGET_POWER	64   /* target power for auto adjustment */
 
-int debug = 0;
+int japlay_debug = 0;
 
 static pthread_mutex_t cursor_mutex;
 
@@ -96,6 +96,11 @@ struct song *get_cursor(void)
 		get_song(song);
 	CURSOR_UNLOCK;
 	return song;
+}
+
+struct song *get_input_song(struct input_state *state)
+{
+	return state->song;
 }
 
 void japlay_set_song_length(struct input_state *state, unsigned int length,
@@ -174,7 +179,7 @@ int get_song_info(struct song *song)
 	return 0;
 }
 
-static int init_decode(struct input_state *ds, struct song *song)
+static int init_input(struct input_state *ds, struct song *song)
 {
 	memset(ds, 0, sizeof(*ds));
 
@@ -199,14 +204,14 @@ static int init_decode(struct input_state *ds, struct song *song)
 	return 0;
 }
 
-static void finish_decode(struct input_state *ds)
+static void finish_input(struct input_state *ds)
 {
 	ds->plugin->close(ds->ctx);
 	free(ds->ctx);
 	put_song(ds->song);
 }
 
-static void run_decode(struct input_state *ds)
+static void run_input(struct input_state *ds)
 {
 	/* decode as much as possible */
 	while (true) {
@@ -259,7 +264,7 @@ static void *playback_thread_routine(void *arg)
 			/* close the current song file */
 			reset = false;
 			if (ds.song) {
-				finish_decode(&ds);
+				finish_input(&ds);
 				ds.song = NULL;
 			}
 		}
@@ -280,7 +285,7 @@ static void *playback_thread_routine(void *arg)
 			get_song(song);
 			CURSOR_UNLOCK;
 
-			if (init_decode(&ds, song)) {
+			if (init_input(&ds, song)) {
 				char *msg = concat_strings("No plugin for file ",
 					get_song_filename(song));
 				if (msg) {
@@ -320,7 +325,7 @@ static void *playback_thread_routine(void *arg)
 		}
 
 		if (!ds.eof)
-			run_decode(&ds);
+			run_input(&ds);
 
 		size_t avail = buffer_read_avail(&ds.buffer);
 
@@ -741,7 +746,7 @@ int japlay_init(int *argc, char **argv)
 	int i, newargc = 1;
 	for (i = 1; i < *argc; ++i) {
 		if (!strcmp(argv[i], "-d")) {
-			debug = 1;
+			japlay_debug = 1;
 		} else
 			argv[newargc++] = argv[i];
 	}

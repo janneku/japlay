@@ -1,11 +1,10 @@
 /*
- * japlay mikmod MPEG audio decoder plugin
+ * japlay libmad MPEG audio decoder plugin
  * Copyright Janne Kulmala 2010
  */
  #define _GNU_SOURCE
 #include "plugin.h"
-
-#include <stdio.h>
+#include "common.h"
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -18,7 +17,6 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <assert.h>
-
 #include <mad.h>
 
 struct input_plugin_ctx {
@@ -186,12 +184,12 @@ static int wait_on_socket(int fd, bool for_recv, int timeout_ms)
 		int ret = select(fd + 1, &infd, &outfd, NULL, &tv);
 		if (ret < 0) {
 			if (errno != EINTR) {
-				printf("select failed (%s)\n", strerror(errno));
+				warning("select failed (%s)\n", strerror(errno));
 				return -1;
 			}
 			continue;
 		} else if (ret == 0) {
-			printf("connection timeout\n");
+			warning("connection timeout\n");
 			return -1;
 		}
 		break;
@@ -227,7 +225,7 @@ static size_t safe_read(struct input_plugin_ctx *ctx, void *buf, size_t maxlen)
 		ssize_t ret = read(ctx->fd, buf, maxlen);
 		if (ret < 0) {
 			if (errno != EINTR) {
-				printf("read failed (%s)\n", strerror(errno));
+				warning("read failed (%s)\n", strerror(errno));
 				return 0;
 			}
 			continue;
@@ -316,12 +314,12 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 	sin.sin_port = htons(ctx->port);
 
 	if (connect(ctx->fd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
-		printf("unable to connect (%s)\n", strerror(errno));
+		warning("unable to connect (%s)\n", strerror(errno));
 		goto err;
 	}
 
 	if (wait_on_socket(ctx->fd, false, 5000)) {
-		printf("connection timeout\n");
+		warning("connection timeout\n");
 		goto err;
 	}
 
@@ -367,7 +365,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 		*newline = 0;
 		char *line = trim((char *) ctx->buffer);
 
-		printf("HTTP: %s\n", line);
+		info("HTTP: %s\n", line);
 
 		const char contype[] = "content-type:";
 		const char conlen[] = "content-length:";
@@ -377,7 +375,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 		if (!strncasecmp(line, contype, strlen(contype))) {
 			char *value = trim(&line[strlen(contype)]);
 			if (strcmp(value, "audio/mpeg")) {
-				printf("invalid content type: %s\n", value);
+				warning("invalid content type: %s\n", value);
 				goto err;
 			}
 		} else if (!strncasecmp(line, conlen, strlen(conlen)) && offset == 0) {
@@ -416,7 +414,7 @@ static int mad_open(struct input_plugin_ctx *ctx, struct input_state *state,
 	} else {
 		ctx->fd = open(filename, O_RDONLY);
 		if (ctx->fd < 0) {
-			printf("unable to open file (%s)\n", strerror(errno));
+			warning("unable to open file (%s)\n", strerror(errno));
 			return -1;
 		}
 		ctx->length = lseek(ctx->fd, 0, SEEK_END);
@@ -469,7 +467,7 @@ static void print_mad_error(const struct mad_stream *stream)
 {
 	if (stream->error == MAD_ERROR_NONE || MAD_RECOVERABLE(stream->error))
 		return;
-	printf("MAD error: %s\n", mad_stream_errorstr(stream));
+	warning("MAD error: %s\n", mad_stream_errorstr(stream));
 }
 
 static int read_meta(struct input_plugin_ctx *ctx)
@@ -491,7 +489,7 @@ static int read_meta(struct input_plugin_ctx *ctx)
 	}
 	meta[metalen] = 0;
 
-	printf("HTTP stream metadata: %s\n", &meta[1]);
+	info("HTTP stream metadata: %s\n", &meta[1]);
 
 	/* TODO: better parser */
 
@@ -555,7 +553,7 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 
 		len = ctx->synth.pcm.length * format->channels;
 		if (len > maxlen) {
-			printf("Too small buffer!\n");
+			warning("Too small buffer!\n");
 			return 0;
 		}
 

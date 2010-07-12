@@ -2,9 +2,9 @@
  * japlay Ogg Vorbis decoder plugin
  * Copyright Janne Kulmala 2010
  */
-#include <vorbis/vorbisfile.h>
-#include "plugin.h"
 #include "common.h"
+#include "plugin.h"
+#include <vorbis/vorbisfile.h>
 
 struct input_plugin_ctx {
 	struct input_state *state;

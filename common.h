@@ -9,7 +9,10 @@
 
 #define error(fmt...)		fprintf(stderr, "ERROR: " fmt)
 #define warning(fmt...)		fprintf(stderr, "WARNING: " fmt)
-#define info(fmt...)		if(debug) fprintf(stderr, "INFO: " fmt)
+#define info(fmt...)		do { \
+					if (japlay_debug) \
+						fprintf(stderr, "INFO: " fmt); \
+				} while (0)
 
 #define NEW(type)	(type *)calloc(1, sizeof(type))
 
@@ -20,6 +23,6 @@
 #define container_of(ptr, type, member) \
 	((type *) ((char *) (ptr) - offsetof(type, member)))
 
-extern int debug;
+extern int japlay_debug;
 
 #endif

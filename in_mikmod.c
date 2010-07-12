@@ -2,10 +2,9 @@
  * japlay MikMod module player plugin
  * Copyright Janne Kulmala 2010
  */
-#include <mikmod.h>
+#include "common.h"
 #include "plugin.h"
-
-#define UNUSED(x)		(void)x
+#include <mikmod.h>
 
 static bool mikmod_init = false;
 
@@ -105,7 +104,7 @@ static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
 
 	ctx->mf = Player_Load((char *)filename, 128, true);
 	if (!ctx->mf) {
-		printf("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
+		warning("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
 		return -1;
 	}
 
