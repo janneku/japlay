@@ -92,7 +92,7 @@ struct song *get_cursor(void)
 
 void japlay_set_song_length(unsigned int length, bool reliable)
 {
-	set_song_length(ds.song, length, reliable);
+	set_song_length(ds.song, length, reliable ? 100 : 10);
 }
 
 unsigned int japlay_get_position(void)
@@ -438,24 +438,50 @@ bool load_playlist_m3u(const char *filename)
 	if (!f)
 		return false;
 
+	/* info extension */
+	char *title = NULL;
+	unsigned int length = -1;
+
 	char row[512];
-	struct song *song = NULL;
 	while (fgets(row, sizeof(row), f)) {
+		const char extinf[] = "#EXTINF:";
+
 		if (row[0] != '#') {
-			if (song)
-				put_song(song);
-			song = NULL;
 			char *fname = build_filename(filename, trim(row));
-			if (fname) {
-				song = add_file_playlist(fname);
-				free(fname);
+			if (fname == NULL)
+				continue;
+			struct song *song = add_file_playlist(fname);
+			if (song) {
+				if (title)
+					set_song_title(song, title);
+				if (length != (unsigned int) -1)
+					set_song_length(song, length * 1000, 20);
+				put_song(song);
 			}
-		} else if(!memcmp(row, "#length ", 8) && song) {
-			set_song_length(song, atoi(&row[8]), false);
+			if (title)
+				free(title);
+			free(fname);
+			title = NULL;
+			length = -1;
+
+		} else if(!strncmp(row, extinf, strlen(extinf))) {
+			char *comma = strchr(row, ',');
+			if (comma) {
+				*comma = 0;
+				comma++;
+			}
+			char *len = &row[strlen(extinf)];
+			if (isdigit(*len))
+				length = atoi(len);
+			if (comma) {
+				if (title)
+					free(title);
+				title = strdup(trim(comma));
+			}
 		}
 	}
-	if (song)
-		put_song(song);
+	if (title)
+		free(title);
 	fclose(f);
 	return true;
 }

@@ -21,7 +21,7 @@ static pthread_mutex_t playlist_mutex;
 
 struct song {
 	struct list_head head;
-	bool reliable_length;
+	int length_score;
 	unsigned int refcount, length;
 	char *filename, *title;
 	struct song_ui_ctx *ui_ctx;
@@ -83,11 +83,12 @@ void put_song(struct song *song)
 	REF_COUNT_UNLOCK;
 }
 
-void set_song_length(struct song *song, unsigned int length, bool reliable)
+void set_song_length(struct song *song, unsigned int length, int score)
 {
-	if (reliable || !song->reliable_length) {
+	/* Higher the score is, more reliable length of the song is */
+	if (score >= song->length_score) {
 		song->length = length;
-		song->reliable_length = reliable;
+		song->length_score = score;
 		ui_update_playlist(song);
 	}
 }
@@ -210,9 +211,14 @@ bool save_playlist_m3u(const char *filename)
 	PLAYLIST_LOCK;
 	list_for_each(pos, &playlist) {
 		struct song *song = container_of(pos, struct song, head);
-		fprintf(f, "%s\n", song->filename);
-		if (song->length != -1)
-			fprintf(f, "#length %d\n", song->length);
+		fprintf(f, "#EXTINF:");
+		if (song->length != (unsigned int) -1)
+			fprintf(f, "%d", song->length / 1000);
+		else
+			fprintf(f, "INVALID");
+		if (song->title)
+			fprintf(f, ",%s", song->title);
+		fprintf(f, "\n%s\n", song->filename);
 	}
 	PLAYLIST_UNLOCK;
 
