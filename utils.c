@@ -2,7 +2,7 @@
  * japlay - Just Another Player
  * Copyright Janne Kulmala 2010
  */
-#define _GNU_SOURCE
+#define _GNU_SOURCE /* asprintf */
 
 #include "utils.h"
 #include <stdlib.h>
@@ -11,6 +11,9 @@
 #include <errno.h>
 #include <assert.h>
 #include <stdio.h>
+#include <ctype.h>
+
+#undef strdup	/* glibc braindamage */
 
 char *concat_strings(const char *s, const char *t)
 {
@@ -107,4 +110,24 @@ char *trim(char *buf)
 	while (isspace(buf[i]))
 		++i;
 	return &buf[i];
+}
+
+char *strdup(const char *str)
+{
+	size_t n = strlen(str) + 1;
+	char *dup = malloc(n);
+	if(dup)
+		memcpy(dup, str, n);
+	return dup;
+}
+
+int strcasecmp(const char *a, const char *b)
+{
+	while (*a && *b) {
+		if (tolower(*a) != tolower(*b))
+			return *b - *a;
+		a++;
+		b++;
+	}
+	return 0;
 }

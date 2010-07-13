@@ -9,5 +9,7 @@ const char *file_base(const char *filename);
 char *file_dir(const char *filename);
 char *build_filename(const char *orig, const char *filename);
 char *trim(char *buf);
+char *strdup(const char *str);
+int strcasecmp(const char *a, const char *b);
 
 #endif

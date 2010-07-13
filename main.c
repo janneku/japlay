@@ -557,9 +557,9 @@ static bool load_plugin(const char *filename)
 	if (dl == NULL)
 		return false;
 
-	struct input_plugin *(*get_input_plugin)(void)
-		= dlsym(dl, "get_input_plugin");
-	if (get_input_plugin != NULL) {
+	get_input_plugin_t get_input_plugin
+		= (get_input_plugin_t *) dlsym(dl, "get_input_plugin");
+	if (get_input_plugin) {
 		struct input_plugin *info = get_input_plugin();
 
 		if (info->seek == NULL)
@@ -574,9 +574,9 @@ static bool load_plugin(const char *filename)
 		}
 	}
 
-	struct playlist_plugin *(*get_playlist_plugin)(void)
-		= dlsym(dl, "get_playlist_plugin");
-	if (get_playlist_plugin != NULL) {
+	get_playlist_plugin_t get_playlist_plugin
+		= (get_playlist_plugin_t *) dlsym(dl, "get_playlist_plugin");
+	if (get_playlist_plugin) {
 		struct playlist_plugin *info = get_playlist_plugin();
 
 		info("found playlist plugin: %s (%s)\n", file_base(filename), info->name);
@@ -636,8 +636,8 @@ static int incoming_data(int fd, int flags, void *ctx)
 	UNUSED(flags);
 	UNUSED(ctx);
 
-	char filename[PATH_MAX + 1];
-	ssize_t len = recvfrom(fd, filename, PATH_MAX, 0, NULL, 0);
+	char filename[FILENAME_MAX + 1];
+	ssize_t len = recvfrom(fd, filename, FILENAME_MAX, 0, NULL, 0);
 	if (len < 0) {
 		if (errno == EAGAIN)
 			return 0;

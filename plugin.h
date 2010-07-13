@@ -64,8 +64,11 @@ struct playlist_plugin {
 	int (*load)(const char *filename);
 };
 
-struct input_plugin *get_input_plugin();
-struct playlist_plugin *get_playlist_plugin();
+typedef struct input_plugin *(*get_input_plugin_t)(void);
+typedef struct playlist_plugin *(*get_playlist_plugin_t)(void);
+
+struct input_plugin *get_input_plugin(void);
+struct playlist_plugin *get_playlist_plugin(void);
 
 /* Getters: */
 struct song *get_input_song(struct input_state *state);

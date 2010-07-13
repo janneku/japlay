@@ -48,17 +48,6 @@ static void unlock_ui()
 		gdk_threads_leave();
 }
 
-static const char *file_ext(const char *filename)
-{
-	size_t i = strlen(filename);
-	while (i && filename[i - 1] != '/') {
-		if (filename[i - 1] == '.')
-			return &filename[i];
-		--i;
-	}
-	return NULL;
-}
-
 /* UI lock must be held */
 static void set_playlist_color(struct song *song, const char *color)
 {

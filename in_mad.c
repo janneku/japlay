@@ -2,7 +2,8 @@
  * japlay libmad MPEG audio decoder plugin
  * Copyright Janne Kulmala 2010
  */
- #define _GNU_SOURCE
+#define _GNU_SOURCE
+
 #include "plugin.h"
 #include "playlist.h"
 #include "common.h"

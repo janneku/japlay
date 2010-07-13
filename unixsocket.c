@@ -1,7 +1,7 @@
 #include "common.h"
 #include "unixsocket.h"
 #include <stdlib.h>
-#include <stdio.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>

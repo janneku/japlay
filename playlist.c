@@ -1,3 +1,9 @@
+/*
+ * japlay - Just Another Player
+ * Copyright Janne Kulmala 2010
+ */
+#define _POSIX_C_SOURCE 200112L	/* spinlocks */
+
 #include "playlist.h"
 #include "common.h"
 #include "japlay.h"

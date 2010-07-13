@@ -4,6 +4,7 @@
  */
 #include "common.h"
 #include "playlist.h"
+#include "utils.h"
 #include "plugin.h"
 #include <vorbis/vorbisfile.h>
 

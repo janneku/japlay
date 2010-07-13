@@ -7,11 +7,11 @@
 
 #define UNUSED(x)		(void)(x)
 
-#define error(fmt...)		fprintf(stderr, "ERROR: " fmt)
-#define warning(fmt...)		fprintf(stderr, "WARNING: " fmt)
-#define info(fmt...)		do { \
+#define error(...)		fprintf(stderr, "ERROR: " __VA_ARGS__)
+#define warning(...)		fprintf(stderr, "WARNING: " __VA_ARGS__)
+#define info(...)		do { \
 					if (japlay_debug) \
-						fprintf(stderr, "INFO: " fmt); \
+						fprintf(stderr, "INFO: " __VA_ARGS__); \
 				} while (0)
 
 #define NEW(type)	(type *)calloc(1, sizeof(type))
