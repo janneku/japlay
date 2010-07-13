@@ -32,6 +32,10 @@ struct input_plugin {
 	/* Check if the plugin can handle the given file */
 	bool (*detect)(const char *filename);
 
+	/* Get formation about the given song file. Note: this should only
+	   look for data that is available with little effort */
+	int (*scan)(struct song *song);
+
 	/* Try to open the given song file. Context is allocated by the caller.
 	   Return -1 if unable to open the file. */
 	int (*open)(struct input_plugin_ctx *ctx, struct input_state *state,

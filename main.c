@@ -160,29 +160,13 @@ static void set_cursor(struct song *song)
 
 int get_song_info(struct song *song)
 {
-	struct input_state ds;
-	memset(&ds, 0, sizeof(ds));
-
 	const char *filename = get_song_filename(song);
 
-	ds.plugin = detect_input_plugin(filename);
-	if (ds.plugin == NULL)
+	struct input_plugin *plugin = detect_input_plugin(filename);
+	if (plugin == NULL)
 		return -1;
 
-	ds.ctx = calloc(1, ds.plugin->ctx_size);
-	if (ds.ctx == NULL)
-		return -1;
-
-	ds.song = song;
-	if (ds.plugin->open(ds.ctx, &ds, filename)) {
-		ds.song = NULL;
-		free(ds.ctx);
-		return -1;
-	}
-
-	ds.plugin->close(ds.ctx);
-	free(ds.ctx);
-	return 0;
+	return plugin->scan(song);
 }
 
 static int init_input(struct input_state *ds, struct song *song)
@@ -543,6 +527,12 @@ void japlay_skip(void)
 	}
 }
 
+static int dummy_scan(struct song *song)
+{
+	UNUSED(song);
+	return 0;
+}
+
 static int dummy_seek(struct input_plugin_ctx *ctx,
 		      struct songpos *newpos)
 {
@@ -564,6 +554,8 @@ static bool load_plugin(const char *filename)
 
 		if (info->seek == NULL)
 			info->seek = dummy_seek;
+		if (info->scan == NULL)
+			info->scan = dummy_scan;
 
 		info("found input plugin: %s (%s)\n", file_base(filename), info->name);
 
