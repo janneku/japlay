@@ -8,8 +8,6 @@
 #include "plugin.h"
 #include <mikmod.h>
 
-static bool mikmod_init = false;
-
 struct input_plugin_ctx {
 	struct input_state *state;
 	MODULE *mf;
@@ -88,11 +86,10 @@ static MDRIVER drv_dummy = {
 	VC_VoiceRealVolume
 };
 
-static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
-		       const char *filename)
+static void init_mikmod(void)
 {
-	ctx->state = state;
-
+	/* TODO: this is racy */
+	static bool mikmod_init = false;
 	if (!mikmod_init) {
 		mikmod_init = true;
 		MikMod_RegisterAllLoaders();
@@ -103,14 +100,37 @@ static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
 
 		MikMod_Init("");
 	}
+}
+
+static int mikmod_scan(struct song *song)
+{
+	init_mikmod();
+
+	MODULE *mf = Player_Load((char *)get_song_filename(song), 128, true);
+	if (mf == NULL) {
+		warning("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
+		return -1;
+	}
+	set_song_title(song, mf->songname);
+	Player_Free(mf);
+	return 0;
+}
+
+static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
+		       const char *filename)
+{
+	struct song *song = get_input_song(state);
+	ctx->state = state;
+
+	init_mikmod();
 
 	ctx->mf = Player_Load((char *)filename, 128, true);
-	if (!ctx->mf) {
+	if (ctx->mf == NULL) {
 		warning("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
 		return -1;
 	}
 
-	set_song_title(get_input_song(state), ctx->mf->songname);
+	set_song_title(song, ctx->mf->songname);
 
 	Player_Start(ctx->mf);
 
@@ -146,6 +166,7 @@ static struct input_plugin plugin_info = {
 	.ctx_size = sizeof(struct input_plugin_ctx),
 	.name = "MikMod module player",
 	.detect = mikmod_detect,
+	.scan = mikmod_scan,
 	.open = mikmod_open,
 	.close = mikmod_close,
 	.fillbuf = mikmod_fillbuf,
