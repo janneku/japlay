@@ -14,6 +14,7 @@ struct songpos {
 
 #define MIN_FILL	4096 /* minimum buffer length for plugin fillbuf call */
 
+struct song;
 struct input_state;
 struct input_plugin_ctx;
 
@@ -79,5 +80,7 @@ struct song *get_input_song(struct input_state *state);
 
 /* Call this to get current position in milliseconds */
 unsigned int japlay_get_position(struct input_state *state);
+
+void set_streaming_title(struct song *song, const char *title);
 
 #endif

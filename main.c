@@ -105,6 +105,14 @@ struct song *get_cursor(void)
 	return song;
 }
 
+void set_streaming_title(struct song *song, const char *title)
+{
+	CURSOR_LOCK;
+	if (song == cursor)
+		ui_set_streaming_title(title);
+	CURSOR_UNLOCK;
+}
+
 struct song *get_input_song(struct input_state *state)
 {
 	return state->song;

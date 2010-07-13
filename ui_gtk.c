@@ -175,6 +175,17 @@ void ui_set_status(int power, unsigned int position)
 	unlock_ui();
 }
 
+void ui_set_streaming_title(const char *title)
+{
+	lock_ui();
+	char *buf = concat_strings(title, " - " APP_NAME);
+	if (buf) {
+		gtk_window_set_title(GTK_WINDOW(main_window), buf);
+		free(buf);
+	}
+	unlock_ui();
+}
+
 void ui_show_message(const char *msg)
 {
 	lock_ui();

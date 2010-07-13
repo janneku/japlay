@@ -503,7 +503,7 @@ static int read_meta(struct input_plugin_ctx *ctx)
 		char *end = strchr(text, '\'');
 		if (end) {
 			*end = 0;
-			set_song_title(get_input_song(ctx->state), text);
+			set_streaming_title(get_input_song(ctx->state), text);
 		}
 	}
 
