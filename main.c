@@ -35,10 +35,16 @@ int japlay_debug = 0;
 
 static pthread_mutex_t cursor_mutex;
 
-static pthread_t playback_thread;
+/* decode thread */
+static pthread_t decode_thread;
 static pthread_mutex_t play_mutex;
-static pthread_cond_t play_cond;
+static pthread_cond_t decode_cond;
 static bool playing = false; /* true if we are playing a song */
+
+/* play thread */
+static pthread_cond_t play_cond;
+static pthread_t play_thread;
+static struct audio_buffer play_buffer;
 
 static pthread_t scan_thread;
 static pthread_mutex_t scan_mutex;
@@ -62,7 +68,7 @@ static long toseek = 0;
 #define CURSOR_LOCK pthread_mutex_lock(&cursor_mutex)
 #define CURSOR_UNLOCK pthread_mutex_unlock(&cursor_mutex)
 
-/* Protects "playing" variable and play_cond */
+/* Protects "playing" variable, decode_cond, play_cond and play_buffer */
 #define PLAY_LOCK pthread_mutex_lock(&play_mutex)
 #define PLAY_UNLOCK pthread_mutex_unlock(&play_mutex)
 
@@ -89,8 +95,6 @@ struct input_state {
 	unsigned int pos_cnt;
 	unsigned int playposition; /* playback position in milliseconds */
 	unsigned int playpos_cnt;
-	bool eof;
-	struct audio_buffer buffer;
 };
 
 static struct input_state ds;
@@ -198,7 +202,6 @@ static int init_input(struct input_state *ds, struct song *song)
 		return -1;
 	}
 	get_song(ds->song);
-	init_buffer(&ds->buffer);
 	return 0;
 }
 
@@ -209,51 +212,9 @@ static void finish_input(struct input_state *ds)
 	put_song(ds->song);
 }
 
-static void run_input(struct input_state *ds)
-{
-	/* decode as much as possible */
-	while (true) {
-		size_t max = buffer_write_avail(&ds->buffer, MIN_FILL);
-		if (max < MIN_FILL)
-			break;
-
-		struct input_format format;
-		size_t filled = ds->plugin->fillbuf(ds->ctx,
-			write_buffer(&ds->buffer), max, &format);
-		if (!filled) {
-			ds->eof = true;
-			break;
-		}
-
-		/* check for format changes */
-		if (ds->format.rate != format.rate ||
-		    ds->format.channels != format.channels) {
-			info("Detected format change\n");
-			ds->pos_cnt = 0;
-			ds->format = format;
-			mark_buffer_formatchg(&ds->buffer);
-		}
-
-		buffer_written(&ds->buffer, filled);
-
-		ds->pos_cnt += filled;
-
-		/* advance song position with full milliseconds from pos_cnt */
-		unsigned int samplerate = ds->format.rate * ds->format.channels;
-		unsigned int adv = ds->pos_cnt * 1000 / samplerate;
-		ds->position += adv;
-		ds->pos_cnt -= adv * samplerate / 1000;
-	}
-}
-
-static void *playback_thread_routine(void *arg)
+static void *decode_thread_routine(void *arg)
 {
 	UNUSED(arg);
-
-	ao_device *dev = NULL;
-	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,
-			.rate = 0, .channels = 0};
-	unsigned int power_cnt = 0, power = 0;
 
 	ds.song = NULL;
 
@@ -267,14 +228,27 @@ static void *playback_thread_routine(void *arg)
 			}
 		}
 
+		size_t avail;
+
 		PLAY_LOCK;
 		if (!playing) {
 			/* we are not currently playing, sleep */
-			pthread_cond_wait(&play_cond, &play_mutex);
+			pthread_cond_wait(&decode_cond, &play_mutex);
 			PLAY_UNLOCK;
 			continue;
+		} else {
+			avail = buffer_write_avail(&play_buffer, MIN_FILL);
+			if (avail < MIN_FILL) {
+				/* buffer is full, wake up play thread and sleep */
+				pthread_cond_signal(&play_cond);
+				pthread_cond_wait(&decode_cond, &play_mutex);
+				PLAY_UNLOCK;
+				continue;
+			}
 		}
 		PLAY_UNLOCK;
+
+		/* avail >= MIN_FILL and playing == true */
 
 		CURSOR_LOCK;
 		if (ds.song == NULL) {
@@ -309,7 +283,7 @@ static void *playback_thread_routine(void *arg)
 			int seekret = ds.plugin->seek(ds.ctx, &newpos);
 			if (seekret < 0) {
 				error("Seek error\n");
-				ds.eof = true;
+				goto diediedie;
 			} else if (seekret == 0) {
 				warning("Seek not supported\n");
 			} else {
@@ -319,17 +293,17 @@ static void *playback_thread_routine(void *arg)
 				ds.pos_cnt = 0;
 				ds.playpos_cnt = 0;
 			}
-			init_buffer(&ds.buffer);
+			/* FIXME
+			PLAY_LOCK;
+			init_buffer(&play_buffer);
+			PLAY_UNLOCK;*/
 		}
 
-		if (!ds.eof)
-			run_input(&ds);
-
-		size_t avail = buffer_read_avail(&ds.buffer);
-
-		if (!avail) {
-			if (!ds.eof)
-				continue;
+		struct input_format format;
+		size_t filled = ds.plugin->fillbuf(ds.ctx,
+			write_buffer(&play_buffer), avail, &format);
+		if (!filled) {
+		diediedie:
 			reset = true;
 
 			/* if we are still playing the same song, go to next one */
@@ -348,11 +322,59 @@ static void *playback_thread_routine(void *arg)
 			continue;
 		}
 
-		bool formatchg = check_buffer_formatchg(&ds.buffer) &&
+		/* check for format changes */
+		if (ds.format.rate != format.rate ||
+		    ds.format.channels != format.channels) {
+			info("Detected format change\n");
+			ds.pos_cnt = 0;
+			ds.format = format;
+			mark_buffer_formatchg(&play_buffer);
+		}
+
+		PLAY_LOCK;
+		buffer_written(&play_buffer, filled);
+		PLAY_UNLOCK;
+
+		ds.pos_cnt += filled;
+
+		/* advance song position with full milliseconds from pos_cnt */
+		/* FIXME: locking */
+		unsigned int samplerate = ds.format.rate * ds.format.channels;
+		unsigned int adv = ds.pos_cnt * 1000 / samplerate;
+		ds.position += adv;
+		ds.pos_cnt -= adv * samplerate / 1000;
+	}
+
+	return NULL;
+}
+
+static void *play_thread_routine(void *arg)
+{
+	UNUSED(arg);
+
+	ao_device *dev = NULL;
+	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,
+			.rate = 0, .channels = 0};
+	unsigned int power_cnt = 0, power = 0;
+
+	while (!quit) {
+		size_t avail;
+
+		PLAY_LOCK;
+		avail = buffer_read_avail(&play_buffer);
+		if (avail == 0 && !check_buffer_formatchg(&play_buffer)) {
+			/* buffer is empty, sleep */
+			pthread_cond_wait(&play_cond, &play_mutex);
+			PLAY_UNLOCK;
+			continue;
+		}
+		PLAY_UNLOCK;
+
+		bool formatchg = check_buffer_formatchg(&play_buffer) &&
 				(ds.format.rate != (unsigned int) format.rate ||
 				 ds.format.channels != (unsigned int) format.channels);
 		if (formatchg || !dev) {
-			/* format changed or device is not open */
+			/* format changed detected or device is not open */
 			if (dev)
 				ao_close(dev);
 			info("format change: %u Hz, %u channels\n",
@@ -370,11 +392,13 @@ static void *playback_thread_routine(void *arg)
 			}
 		}
 
-		sample_t *buffer = read_buffer(&ds.buffer);
+		sample_t *buffer = read_buffer(&play_buffer);
 
-		unsigned int samplerate = ds.format.rate * ds.format.channels;
+		unsigned int samplerate = format.rate * format.channels;
 		if (avail > samplerate / REFRESH_RATE)
 			avail = samplerate / REFRESH_RATE;
+		if (avail)
+		avail = (1 + rand() % (avail/format.channels)) * format.channels;
 
 		size_t i;
 		if (volume != 256) {
@@ -394,6 +418,7 @@ static void *playback_thread_routine(void *arg)
 		ds.playpos_cnt += avail;
 
 		/* advance song position with full milliseconds from pos_cnt */
+		/* FIXME: locking */
 		unsigned int adv = ds.playpos_cnt * 1000 / samplerate;
 		ds.playposition += adv;
 		ds.playpos_cnt -= adv * samplerate / 1000;
@@ -418,7 +443,11 @@ static void *playback_thread_routine(void *arg)
 
 		ao_play(dev, (char *)buffer, avail * 2);
 
-		buffer_processed(&ds.buffer, avail);
+		/* we are done with the audio data */
+		PLAY_LOCK;
+		buffer_processed(&play_buffer, avail);
+		pthread_cond_signal(&decode_cond);
+		PLAY_UNLOCK;
 	}
 
 	return NULL;
@@ -469,7 +498,7 @@ static void kick_playback(void)
 {
 	PLAY_LOCK;
 	playing = true;
-	pthread_cond_signal(&play_cond);
+	pthread_cond_signal(&decode_cond);
 	PLAY_UNLOCK;
 }
 
@@ -707,14 +736,20 @@ int japlay_init(int *argc, char **argv)
 	init_playlist();
 	iowatch_init();
 
+	init_buffer(&play_buffer);
+
 	pthread_mutex_init(&cursor_mutex, NULL);
 
 	pthread_mutex_init(&play_mutex, NULL);
-	pthread_cond_init(&play_cond, NULL);
-	pthread_create(&playback_thread, NULL, playback_thread_routine, NULL);
 
 	pthread_mutex_init(&scan_mutex, NULL);
+
+	pthread_cond_init(&play_cond, NULL);
+	pthread_cond_init(&decode_cond, NULL);
 	pthread_cond_init(&scan_cond, NULL);
+
+	pthread_create(&decode_thread, NULL, decode_thread_routine, NULL);
+	pthread_create(&play_thread, NULL, play_thread_routine, NULL);
 	pthread_create(&scan_thread, NULL, scan_thread_routine, NULL);
 
 	int fd = unix_socket_create(SOCKET_NAME);
@@ -727,10 +762,12 @@ int japlay_init(int *argc, char **argv)
 void japlay_exit(void)
 {
 	quit = true;
+	pthread_cond_signal(&decode_cond);
+	pthread_cond_signal(&play_cond);
+	pthread_cond_signal(&scan_cond);
 	void *retval;
-	kick_playback();
-	start_playlist_scan();
-	pthread_join(playback_thread, &retval);
+	pthread_join(decode_thread, &retval);
+	pthread_join(play_thread, &retval);
 	pthread_join(scan_thread, &retval);
 
 	unlink(SOCKET_NAME);
