@@ -397,8 +397,6 @@ static void *play_thread_routine(void *arg)
 		unsigned int samplerate = format.rate * format.channels;
 		if (avail > samplerate / REFRESH_RATE)
 			avail = samplerate / REFRESH_RATE;
-		if (avail)
-		avail = (1 + rand() % (avail/format.channels)) * format.channels;
 
 		size_t i;
 		if (volume != 256) {
