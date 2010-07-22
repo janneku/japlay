@@ -170,6 +170,15 @@ static size_t estimate(struct input_plugin_ctx *ctx, size_t t)
 	return newpos;
 }
 
+static int setblocking(int fd, bool blocking)
+{
+	int flags = fcntl(fd, F_GETFL);
+	flags &= ~O_NONBLOCK;
+	if (!blocking)
+		flags |= O_NONBLOCK;
+	return fcntl(fd, F_SETFL, flags);
+}
+
 static int wait_on_socket(int fd, bool for_recv, int timeout_ms)
 {
 	struct timeval tv = {.tv_sec = timeout_ms / 1000, .tv_usec = (timeout_ms % 1000) * 1000};
@@ -185,11 +194,10 @@ static int wait_on_socket(int fd, bool for_recv, int timeout_ms)
 	while (true) {
 		int ret = select(fd + 1, &infd, &outfd, NULL, &tv);
 		if (ret < 0) {
-			if (errno != EINTR) {
-				warning("select failed (%s)\n", strerror(errno));
-				return -1;
-			}
-			continue;
+			if (errno == EINTR)
+				continue;
+			warning("select failed (%s)\n", strerror(errno));
+			return -1;
 		} else if (ret == 0) {
 			warning("connection timeout\n");
 			return -1;
@@ -217,22 +225,16 @@ static bool mad_detect(const char *filename)
 		(ext && !strcasecmp(ext, "mp3"));
 }
 
-static size_t safe_read(struct input_plugin_ctx *ctx, void *buf, size_t maxlen)
+static size_t xread(int fd, void *buf, size_t maxlen)
 {
-	if (ctx->streaming) {
-		if (wait_on_socket(ctx->fd, true, 5000))
-			return 0;
-	}
 	while (true) {
-		ssize_t ret = read(ctx->fd, buf, maxlen);
+		ssize_t ret = read(fd, buf, maxlen);
 		if (ret < 0) {
-			if (errno != EINTR) {
-				warning("read failed (%s)\n", strerror(errno));
-				return 0;
-			}
-			continue;
-		} else if (ret == 0)
-			ctx->eof = true;
+			if (errno == EINTR)
+				continue;
+			warning("read failed (%s)\n", strerror(errno));
+			ret = 0;
+		}
 		return ret;
 	}
 }
@@ -240,9 +242,18 @@ static size_t safe_read(struct input_plugin_ctx *ctx, void *buf, size_t maxlen)
 /* fill the read buffer */
 static int fillbuf(struct input_plugin_ctx *ctx)
 {
-	size_t len = safe_read(ctx, &ctx->buffer[ctx->buflen], sizeof(ctx->buffer) - ctx->buflen);
-	if (len == 0)
+	if (ctx->streaming) {
+		if (wait_on_socket(ctx->fd, true, 5000)) {
+			ctx->eof = true;
+			return -1;
+		}
+	}
+	size_t len = xread(ctx->fd, &ctx->buffer[ctx->buflen],
+			   sizeof(ctx->buffer) - ctx->buflen);
+	if (len == 0) {
+		ctx->eof = true;
 		return -1;
+	}
 	ctx->buflen += len;
 	return 0;
 }
@@ -276,6 +287,7 @@ static int parse_url(struct input_plugin_ctx *ctx, const char *url)
 	if (ctx->addr == (in_addr_t) -1) {
 		struct hostent *hp = gethostbyname(ctx->host);
 		if (!hp) {
+			warning("unable to resolve host %s\n", ctx->host);
 			free(ctx->host);
 			return -1;
 		}
@@ -310,14 +322,19 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 	if (ctx->fd < 0)
 		goto err;
 
+	setblocking(ctx->fd, false);
+
 	struct sockaddr_in sin;
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = ctx->addr;
 	sin.sin_port = htons(ctx->port);
 
 	if (connect(ctx->fd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
-		warning("unable to connect (%s)\n", strerror(errno));
-		goto err;
+		if (errno != EINPROGRESS) {
+			warning("unable to connect to %s (%s)\n", ctx->host,
+				strerror(errno));
+			goto err;
+		}
 	}
 
 	if (wait_on_socket(ctx->fd, false, 5000)) {
@@ -486,9 +503,11 @@ static int read_meta(struct input_plugin_ctx *ctx)
 	skipbuf(ctx, ctx->metapos, i);
 
 	while (i < metalen) {
-		size_t len = safe_read(ctx, &meta[i], metalen - i);
-		if (len == 0)
+		size_t len = xread(ctx->fd, &meta[i], metalen - i);
+		if (len == 0) {
+			ctx->eof = true;
 			return -1;
+		}
 		i += len;
 	}
 	meta[metalen] = 0;
