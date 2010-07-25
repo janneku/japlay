@@ -1,0 +1,14 @@
+Heikki Orsila's "to do" list:
+
+* Sort files that are added to playlist
+* Add directory to playlist
+* Unknown fileformat should not prevent advancement in playlist.
+  Currently unknown fileformat stops playback completely.
+* Playlist entry re-ordering
+* Playlist entry queueing
+* Disable amplitude equalizer
+* XMMS/Winamp compatible key bindings
+* Configurable key bindings
+* Repeat mode
+* Random play mode
+* Open/add file requester should remember the old path
