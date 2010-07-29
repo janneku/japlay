@@ -124,7 +124,9 @@ void put_song(struct song *song)
 		free(song->filename);
 		if (song->title)
 			free(song->title);
+		DATABASE_LOCK;
 		hashmap_remove(&song_map, (void *)song->filename);
+		DATABASE_UNLOCK;
 		free(song);
 	}
 }
