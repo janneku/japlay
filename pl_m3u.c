@@ -46,13 +46,14 @@ static int m3u_load(const char *filename)
 			char *fname = build_filename(filename, trim(row));
 			if (fname == NULL)
 				continue;
-			struct song *song = add_file_playlist(fname);
-			if (song) {
+			struct playlist_entry *entry = add_file_playlist(fname);
+			if (entry) {
+				struct song *song = get_entry_song(entry);
 				if (title)
 					set_song_title(song, title);
 				if (length != (unsigned int) -1)
 					set_song_length(song, length * 1000, 20);
-				put_song(song);
+				put_entry(entry);
 			}
 			if (title)
 				free(title);

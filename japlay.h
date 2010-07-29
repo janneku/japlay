@@ -4,16 +4,17 @@
 #include <stdbool.h> /* bool */
 
 struct song;
+struct playlist_entry;
 
-struct song *get_cursor(void);
+struct playlist_entry *get_cursor(void);
 
 int get_song_info(struct song *song);
 
-struct song *add_file_playlist(const char *filename);
+struct playlist_entry *add_file_playlist(const char *filename);
 
 int load_playlist(const char *filename);
 
-void play_playlist(struct song *song);
+void play_playlist(struct playlist_entry *entry);
 
 void japlay_play(void);
 void japlay_set_autovol(bool enabled);

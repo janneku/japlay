@@ -57,7 +57,7 @@ static bool quit = false;
 static struct list_head input_plugins;
 static struct list_head playlist_plugins;
 
-static struct song *cursor = NULL;
+static struct playlist_entry *cursor = NULL;
 
 static bool autovol = false;
 static int volume = 256;
@@ -99,20 +99,20 @@ struct input_state {
 
 static struct input_state ds;
 
-struct song *get_cursor(void)
+struct playlist_entry *get_cursor(void)
 {
 	CURSOR_LOCK;
-	struct song *song = cursor;
-	if (song)
-		get_song(song);
+	struct playlist_entry *entry = cursor;
+	if (entry)
+		get_entry(entry);
 	CURSOR_UNLOCK;
-	return song;
+	return entry;
 }
 
 void set_streaming_title(struct song *song, const char *title)
 {
 	CURSOR_LOCK;
-	if (song == cursor)
+	if (song == get_entry_song(cursor))
 		ui_set_streaming_title(title);
 	CURSOR_UNLOCK;
 }
@@ -153,20 +153,20 @@ static struct playlist_plugin *detect_playlist_plugin(const char *filename)
 	return NULL;
 }
 
-static void set_cursor_locked(struct song *song)
+static void set_cursor_locked(struct playlist_entry *entry)
 {
-	get_song(song);
-	ui_set_cursor(cursor, song);
+	get_entry(entry);
+	ui_set_cursor(cursor, entry);
 	if (cursor)
-		put_song(cursor);
-	cursor = song;
+		put_entry(cursor);
+	cursor = entry;
 	reset = true;
 }
 
-static void set_cursor(struct song *song)
+static void set_cursor(struct playlist_entry *entry)
 {
 	CURSOR_LOCK;
-	set_cursor_locked(song);
+	set_cursor_locked(entry);
 	CURSOR_UNLOCK;
 }
 
@@ -253,7 +253,7 @@ static void *decode_thread_routine(void *arg)
 		CURSOR_LOCK;
 		if (ds.song == NULL) {
 			/* start a new song */
-			struct song *song = cursor;
+			struct song *song = get_entry_song(cursor);
 			get_song(song);
 			CURSOR_UNLOCK;
 
@@ -308,11 +308,12 @@ static void *decode_thread_routine(void *arg)
 
 			/* if we are still playing the same song, go to next one */
 			CURSOR_LOCK;
-			if (ds.song == cursor) {
-				struct song *next = playlist_next(ds.song, true);
+			if (ds.song == get_entry_song(cursor)) {
+				struct playlist_entry *next =
+					playlist_next(cursor, true);
 				if (next) {
 					set_cursor_locked(next);
-					put_song(next);
+					put_entry(next);
 				} else {
 					/* end of playlist, stop */
 					playing = false;
@@ -472,16 +473,18 @@ static void *scan_thread_routine(void *arg)
 	return NULL;
 }
 
-struct song *add_file_playlist(const char *filename)
+struct playlist_entry *add_file_playlist(const char *filename)
 {
 	char *path = absolute_path(filename);
 	if (!path)
 		return NULL;
 	struct song *song = new_song(path);
-	if (song)
-		add_playlist(song);
 	free(path);
-	return song;
+	if (song == NULL)
+		return NULL;
+	struct playlist_entry *entry = add_playlist(song);
+	put_song(song);
+	return entry;
 }
 
 int load_playlist(const char *filename)
@@ -508,9 +511,9 @@ void start_playlist_scan(void)
 	SCAN_UNLOCK;
 }
 
-void play_playlist(struct song *song)
+void play_playlist(struct playlist_entry *entry)
 {
-	set_cursor(song);
+	set_cursor(entry);
 	kick_playback();
 }
 
@@ -518,13 +521,13 @@ void japlay_play(void)
 {
 	CURSOR_LOCK;
 	if (cursor == NULL) {
-		struct song *song = get_playlist_first();
-		if (song == NULL) {
+		struct playlist_entry *entry = get_playlist_first();
+		if (entry == NULL) {
 			CURSOR_UNLOCK;
 			return;
 		}
-		set_cursor_locked(song);
-		put_song(song);
+		set_cursor_locked(entry);
+		put_entry(entry);
 	}
 	CURSOR_UNLOCK;
 	kick_playback();
@@ -553,12 +556,12 @@ void japlay_pause(void)
 
 void japlay_skip(void)
 {
-	struct song *song = get_cursor();
-	struct song *next = playlist_next(song, true);
-	put_song(song);
+	struct playlist_entry *entry = get_cursor();
+	struct playlist_entry *next = playlist_next(entry, true);
+	put_entry(entry);
 	if (next) {
 		set_cursor(next);
-		put_song(next);
+		put_entry(next);
 	}
 }
 
@@ -677,9 +680,9 @@ static int incoming_data(int fd, int flags, void *ctx)
 		return -1;
 	}
 	filename[len] = 0;
-	struct song *song = add_file_playlist(filename);
-	if (song)
-		put_song(song);
+	struct playlist_entry *entry = add_file_playlist(filename);
+	if (entry)
+		put_entry(entry);
 	return 0;
 }
 

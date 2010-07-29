@@ -44,9 +44,10 @@ static int pls_load(const char *filename)
 		if (!memcmp(trim(row), "File", 4)) {
 			char *fname = build_filename(filename, trim(value));
 			if (fname) {
-				struct song *song = add_file_playlist(fname);
-				if (song)
-					put_song(song);
+				struct playlist_entry *entry
+					= add_file_playlist(fname);
+				if (entry)
+					put_entry(entry);
 				free(fname);
 			}
 		}

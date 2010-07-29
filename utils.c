@@ -13,14 +13,20 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#undef strdup	/* glibc braindamage */
-
 char *concat_strings(const char *s, const char *t)
 {
 	char *buf;
 	if (asprintf(&buf, "%s%s", s, t) < 0)
 		return NULL;
 	return buf;
+}
+
+size_t str_hash(const char *str)
+{
+	size_t hash = 5381;
+	while (*str)
+		hash = ((hash << 5) + hash) + *str++;
+	return hash;
 }
 
 char *get_config_dir(void)

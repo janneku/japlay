@@ -49,9 +49,9 @@ static void unlock_ui()
 }
 
 /* UI lock must be held */
-static void set_playlist_color(struct song *song, const char *color)
+static void set_playlist_color(struct playlist_entry *entry, const char *color)
 {
-	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+	struct song_ui_ctx *ctx = get_entry_ui_ctx(entry);
 	if (!ctx->rowref)
 		return;
 
@@ -75,9 +75,10 @@ static char *get_display_name(struct song *song)
 	return g_filename_to_utf8(file_base(filename), -1, NULL, NULL, NULL);
 }
 
-void ui_add_playlist(struct song *song)
+void ui_add_playlist(struct playlist_entry *entry)
 {
-	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+	struct song *song = get_entry_song(entry);
+	struct song_ui_ctx *ctx = get_entry_ui_ctx(entry);
 
 	lock_ui();
 	GtkTreeIter iter;
@@ -89,7 +90,7 @@ void ui_add_playlist(struct song *song)
 		strcpy(buf, "-");
 	else
 		sprintf(buf, "%d:%02d", length / (1000 * 60), (length / 1000) % 60);
-	gtk_list_store_set(playlist_store, &iter, COL_ENTRY, song,
+	gtk_list_store_set(playlist_store, &iter, COL_ENTRY, entry,
 		COL_NAME, name, COL_LENGTH, buf, COL_COLOR, NULL, -1);
 	free(name);
 
@@ -100,9 +101,9 @@ void ui_add_playlist(struct song *song)
 	unlock_ui();
 }
 
-void ui_remove_playlist(struct song *song)
+void ui_remove_playlist(struct playlist_entry *entry)
 {
-	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+	struct song_ui_ctx *ctx = get_entry_ui_ctx(entry);
 
 	lock_ui();
 	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
@@ -118,9 +119,9 @@ void ui_remove_playlist(struct song *song)
 	ctx->rowref = NULL;
 }
 
-void ui_update_playlist(struct song *song)
+void ui_update_playlist(struct playlist_entry *entry)
 {
-	struct song_ui_ctx *ctx = get_song_ui_ctx(song);
+	struct song_ui_ctx *ctx = get_entry_ui_ctx(entry);
 	if (!ctx->rowref)
 		return;
 
@@ -131,9 +132,9 @@ void ui_update_playlist(struct song *song)
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
 	gtk_tree_path_free(path);
 
-	char *name = get_display_name(song);
+	char *name = get_display_name(get_entry_song(entry));
 	char buf[32];
-	unsigned int length = get_song_length(song);
+	unsigned int length = get_song_length(get_entry_song(entry));
 	if (length == -1)
 		strcpy(buf, "-");
 	else
@@ -144,15 +145,15 @@ void ui_update_playlist(struct song *song)
 	unlock_ui();
 }
 
-void ui_set_cursor(struct song *prev, struct song *song)
+void ui_set_cursor(struct playlist_entry *prev, struct playlist_entry *entry)
 {
 	lock_ui();
 	if (prev)
 		set_playlist_color(prev, NULL);
 
-	set_playlist_color(song, "red");
+	set_playlist_color(entry, "red");
 
-	char *name = get_display_name(song);
+	char *name = get_display_name(get_entry_song(entry));
 	char *buf = concat_strings(name, " - " APP_NAME);
 	if (buf) {
 		gtk_window_set_title(GTK_WINDOW(main_window), buf);
@@ -203,9 +204,9 @@ static void add_one_file(char *filename, gpointer ptr)
 {
 	UNUSED(ptr);
 	if (load_playlist(filename)) {
-		struct song *song = add_file_playlist(filename);
-		if (song)
-			put_song(song);
+		struct playlist_entry *entry = add_file_playlist(filename);
+		if (entry)
+			put_entry(entry);
 	}
 	g_free(filename);
 }
@@ -258,18 +259,19 @@ static void append_rr_list(GtkTreePath *path, GList **rowref_list)
 	gtk_tree_path_free(path);
 }
 
-static struct song *entry_from_store(GtkTreePath *path)
+static struct playlist_entry *entry_from_store(GtkTreePath *path)
 {
 	GtkTreeIter iter;
 	gtk_tree_model_get_iter(GTK_TREE_MODEL(playlist_store), &iter, path);
 
 	GValue value;
 	memset(&value, 0, sizeof(value));
-	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist_store), &iter, COL_ENTRY, &value);
-	struct song *song = g_value_get_pointer(&value);
+	gtk_tree_model_get_value(GTK_TREE_MODEL(playlist_store), &iter,
+				 COL_ENTRY, &value);
+	struct playlist_entry *entry = g_value_get_pointer(&value);
 	g_value_unset(&value);
 
-	return song;
+	return entry;
 }
 
 static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
@@ -278,10 +280,10 @@ static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
 	GtkTreePath *path = gtk_tree_row_reference_get_path(rowref);
 	gtk_tree_row_reference_free(rowref);
 
-	struct song *song = entry_from_store(path);
+	struct playlist_entry *entry = entry_from_store(path);
 	gtk_tree_path_free(path);
 
-	remove_playlist(song);
+	remove_playlist(entry);
 }
 
 static void delete_cb(GtkButton *button, gpointer ptr)
