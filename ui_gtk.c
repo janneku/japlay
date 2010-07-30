@@ -37,6 +37,7 @@ size_t ui_playlist_ctx_size = sizeof(struct playlist_ui_ctx);
 
 static GtkWidget *main_window;
 static GtkWidget *power_bar;
+static GtkWidget *seekbar;
 static GtkWidget *notebook;
 static GThread *main_thread;
 static bool quit = false;
@@ -180,7 +181,7 @@ void ui_show_playlist(struct playlist *playlist)
 	pages[idx] = playlist;
 }
 
-void ui_update_playlist(struct playlist *playlist, struct playlist_entry *entry)
+void ui_update_entry(struct playlist *playlist, struct playlist_entry *entry)
 {
 	struct playlist_ui_ctx *playlist_ctx = get_playlist_ui_ctx(playlist);
 	struct entry_ui_ctx *ctx = get_entry_ui_ctx(entry);
@@ -208,18 +209,22 @@ void ui_update_playlist(struct playlist *playlist, struct playlist_entry *entry)
 
 void ui_set_cursor(struct playlist_entry *entry)
 {
+	GtkAdjustment *adj = gtk_range_get_adjustment(GTK_RANGE(seekbar));
 	lock_ui();
 	if (entry) {
-		char *name = get_display_name(get_entry_song(entry));
+		struct song *song = get_entry_song(entry);
+		char *name = get_display_name(song);
 		char *buf = concat_strings(name, " - " APP_NAME);
 		if (buf) {
 			gtk_window_set_title(GTK_WINDOW(main_window), buf);
 			free(buf);
 		}
 		free(name);
-	} else
+		gtk_adjustment_set_upper(adj, get_song_length(song) / 1000.0);
+	} else {
 		gtk_window_set_title(GTK_WINDOW(main_window), APP_NAME);
-
+		gtk_adjustment_set_upper(adj, 1);
+	}
 	write(wake_fd, "", 1);
 	unlock_ui();
 }
@@ -231,6 +236,9 @@ void ui_set_status(int power, unsigned int position)
 	char buf[10];
 	sprintf(buf, "%d:%02d", position / (1000 * 60), (position / 1000) % 60);
 	gtk_progress_bar_set_text(GTK_PROGRESS_BAR(power_bar), buf);
+	GtkAdjustment *adj = gtk_range_get_adjustment(GTK_RANGE(seekbar));
+	gtk_adjustment_set_value(adj, position / 1000.0);
+
 	write(wake_fd, "", 1);
 	unlock_ui();
 }
@@ -473,6 +481,16 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 	quit = true;
 }
 
+static gboolean seek_cb(GtkRange *range, GtkScrollType scroll, double value,
+			gpointer ptr)
+{
+	UNUSED(range);
+	UNUSED(scroll);
+	UNUSED(ptr);
+	japlay_seek(value * 1000.0);
+	return true;
+}
+
 static int incoming_wake(int fd, int flags, void *ctx)
 {
 	UNUSED(flags);
@@ -601,11 +619,17 @@ int main(int argc, char **argv)
 	power_bar = gtk_progress_bar_new();
 	gtk_box_pack_start(GTK_BOX(toolbar), power_bar, false, true, 0);
 
+	seekbar = gtk_hscale_new_with_range(0, 1, 1);
+	gtk_range_set_update_policy(GTK_RANGE(seekbar), GTK_UPDATE_DELAYED);
+	g_signal_connect(G_OBJECT(seekbar), "change-value", G_CALLBACK(seek_cb), NULL);
+	gtk_widget_set_size_request(seekbar, 100, -1);
+
 	notebook = gtk_notebook_new();
 
 	GtkWidget *vbox = gtk_vbox_new(false, 0);
 	gtk_box_pack_start(GTK_BOX(vbox), menubar, false, true, 0);
 	gtk_box_pack_start(GTK_BOX(vbox), toolbar, false, true, 0);
+	gtk_box_pack_start(GTK_BOX(vbox), seekbar, false, true, 0);
 	gtk_box_pack_start(GTK_BOX(vbox), notebook, true, true, 0);
 
 	gtk_container_add(GTK_CONTAINER(main_window), vbox);

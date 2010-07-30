@@ -18,7 +18,7 @@ void ui_add_entry(struct playlist *playlist, struct playlist_entry *after,
 void ui_remove_entry(struct playlist *playlist, struct playlist_entry *entry);
 void ui_show_playlist(struct playlist *playlist);
 void ui_hide_playlist(struct playlist *playlist);
-void ui_update_playlist(struct playlist *playlist, struct playlist_entry *entry);
+void ui_update_entry(struct playlist *playlist, struct playlist_entry *entry);
 void ui_set_cursor(struct playlist_entry *entry);
 void ui_set_status(int power, unsigned int position);
 void ui_set_streaming_title(const char *title);

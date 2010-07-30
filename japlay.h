@@ -21,6 +21,7 @@ int load_playlist(struct playlist *playlist, const char *filename);
 void japlay_play(void);
 void japlay_set_autovol(bool enabled);
 void japlay_seek_relative(long msecs);
+void japlay_seek(long msecs);
 void japlay_stop(void);
 void japlay_pause(void);
 void japlay_skip(void);

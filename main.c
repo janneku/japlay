@@ -282,11 +282,7 @@ static void *decode_thread_routine(void *arg)
 			CURSOR_UNLOCK;
 
 		if (toseek) {
-			struct songpos newpos = {.msecs = ds.playposition};
-			long msecs = newpos.msecs + toseek;
-			if (msecs < 0)
-				msecs = 0;
-			newpos.msecs = msecs;
+			struct songpos newpos = {.msecs = toseek,};
 			toseek = 0;
 			int seekret = ds.plugin->seek(ds.ctx, &newpos);
 			if (seekret < 0) {
@@ -522,7 +518,14 @@ void japlay_set_autovol(bool enabled)
 
 void japlay_seek_relative(long msecs)
 {
-	toseek = msecs;
+	japlay_seek(ds.playposition + msecs);
+}
+
+void japlay_seek(long position)
+{
+	if (position < 0)
+		position = 0;
+	toseek = position;
 }
 
 void japlay_stop(void)

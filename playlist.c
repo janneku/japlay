@@ -34,10 +34,13 @@ struct song {
 	int length_score;
 	unsigned int refcount, length;
 	char *filename, *title;
+	struct list_head entries;
 };
 
 struct playlist_entry {
+	struct playlist *playlist;
 	struct list_head head;
+	struct list_head song_head;
 	unsigned int refcount;
 	struct song *song;
 	struct entry_ui_ctx *ui_ctx;
@@ -134,6 +137,7 @@ struct song *new_song(const char *filename)
 	if (song == NULL) {
 		song = NEW(struct song);
 		if (song) {
+			list_init(&song->entries);
 			song->filename = strdup(filename);
 			song->refcount = 1;
 			song->length = (unsigned int) -1;
@@ -189,6 +193,9 @@ void put_entry(struct playlist_entry *entry)
 
 	if (zero) {
 		assert(entry->head.next == NULL);
+		DATABASE_LOCK;
+		list_del(&entry->song_head);
+		DATABASE_UNLOCK;
 		put_song(entry->song);
 		free(entry->ui_ctx);
 		free(entry);
@@ -201,8 +208,16 @@ void set_song_length(struct song *song, unsigned int length, int score)
 	if (score >= song->length_score) {
 		song->length = length;
 		song->length_score = score;
-		/*FIXME
-		ui_update_playlist(song);*/
+
+		/* notify UI */
+		struct list_head *pos;
+		DATABASE_LOCK;
+		list_for_each(pos, &song->entries) {
+			struct playlist_entry *entry
+				= container_of(pos, struct playlist_entry, song_head);
+			ui_update_entry(entry->playlist, entry);
+		}
+		DATABASE_UNLOCK;
 	}
 }
 
@@ -212,8 +227,16 @@ void set_song_title(struct song *song, const char *str)
 	if (song->title)
 		free(song->title);
 	song->title = strdup(str);
-	/*FIXME
-	ui_update_playlist(song);*/
+
+	/* notify UI */
+	struct list_head *pos;
+	DATABASE_LOCK;
+	list_for_each(pos, &song->entries) {
+		struct playlist_entry *entry
+			= container_of(pos, struct playlist_entry, song_head);
+		ui_update_entry(entry->playlist, entry);
+	}
+	DATABASE_UNLOCK;
 }
 
 struct playlist_entry *get_playlist_first(struct playlist *playlist)
@@ -234,6 +257,7 @@ struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song
 	struct playlist_entry *entry = NEW(struct playlist_entry);
 	if (entry == NULL)
 		return NULL;
+	entry->playlist = playlist;
 	entry->ui_ctx = calloc(1, ui_song_ctx_size);
 	entry->refcount = 2; /* yes, return with refcount of two */
 	get_song(song);
@@ -266,6 +290,10 @@ struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song
 	ui_add_entry(playlist, after, entry);
 	playlist->len++;
 	PLAYLIST_UNLOCK(playlist);
+
+	DATABASE_LOCK;
+	list_add_tail(&entry->song_head, &song->entries);
+	DATABASE_UNLOCK;
 	return entry;
 }
 
