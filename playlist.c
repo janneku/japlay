@@ -11,13 +11,11 @@
 #include "list.h"
 #include "utils.h"
 #include "hashmap.h"
-#include <glib.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <assert.h>
 
-static struct list_head playlist;
 static struct hashmap song_map;
-static unsigned int playlist_len = 0;
 
 static pthread_spinlock_t refcountspinlock;
 static pthread_mutex_t database_mutex;
@@ -27,6 +25,9 @@ static pthread_mutex_t database_mutex;
 
 #define DATABASE_LOCK pthread_mutex_lock(&database_mutex)
 #define DATABASE_UNLOCK pthread_mutex_unlock(&database_mutex)
+
+#define PLAYLIST_LOCK(playlist) pthread_mutex_lock(&(playlist)->mutex)
+#define PLAYLIST_UNLOCK(playlist) pthread_mutex_unlock(&(playlist)->mutex)
 
 struct song {
 	struct hash_node node;
@@ -39,7 +40,16 @@ struct playlist_entry {
 	struct list_head head;
 	unsigned int refcount;
 	struct song *song;
-	struct song_ui_ctx *ui_ctx;
+	struct entry_ui_ctx *ui_ctx;
+};
+
+struct playlist {
+	struct list_head entries;
+	pthread_mutex_t mutex;
+	const char *name;
+	unsigned int len;
+	struct playlist_ui_ctx *ui_ctx;
+	bool shuffle;
 };
 
 struct song *get_entry_song(struct playlist_entry *entry)
@@ -48,9 +58,14 @@ struct song *get_entry_song(struct playlist_entry *entry)
 	return entry->song;
 }
 
-struct song_ui_ctx *get_entry_ui_ctx(struct playlist_entry *entry)
+struct entry_ui_ctx *get_entry_ui_ctx(struct playlist_entry *entry)
 {
 	return entry->ui_ctx;
+}
+
+struct playlist_ui_ctx *get_playlist_ui_ctx(struct playlist *playlist)
+{
+	return playlist->ui_ctx;
 }
 
 const char *get_song_filename(struct song *song)
@@ -60,9 +75,15 @@ const char *get_song_filename(struct song *song)
 
 char *get_song_title(struct song *song)
 {
+	/* TODO: locking */
 	if (song->title)
 		return strdup(song->title);
 	return NULL;
+}
+
+const char *get_playlist_name(struct playlist *playlist)
+{
+	return playlist->name;
 }
 
 unsigned int get_song_length(struct song *song)
@@ -70,12 +91,16 @@ unsigned int get_song_length(struct song *song)
 	return song->length;
 }
 
+void set_playlist_shuffle(struct playlist *playlist, bool enabled)
+{
+	playlist->shuffle = enabled;
+}
+
 static struct song *find_song_locked(const char *filename)
 {
 	struct hash_node *node = hashmap_get(&song_map, (void *)filename);
 	if (node == NULL)
 		return NULL;
-	printf("hashmap hit\n");
 	struct song *song = container_of(node, struct song, node);
 	get_song(song);
 	return song;
@@ -87,6 +112,19 @@ struct song *find_song(const char *filename)
 	struct song *song = find_song_locked(filename);
 	DATABASE_UNLOCK;
 	return song;
+}
+
+struct playlist *new_playlist(const char *name)
+{
+	struct playlist *playlist = NEW(struct playlist);
+	if (playlist == NULL)
+		return NULL;
+	pthread_mutex_init(&playlist->mutex, NULL);
+	playlist->name = strdup(name);
+	playlist->ui_ctx = calloc(1, ui_playlist_ctx_size);
+	list_init(&playlist->entries);
+	ui_show_playlist(playlist);
+	return playlist;
 }
 
 struct song *new_song(const char *filename)
@@ -109,6 +147,7 @@ struct song *new_song(const char *filename)
 void get_song(struct song *song)
 {
 	REF_COUNT_LOCK;
+	assert(song->refcount > 0);
 	song->refcount++;
 	REF_COUNT_UNLOCK;
 }
@@ -116,17 +155,18 @@ void get_song(struct song *song)
 void put_song(struct song *song)
 {
 	REF_COUNT_LOCK;
+	assert(song->refcount > 0);
 	song->refcount--;
 	bool zero = (song->refcount == 0);
 	REF_COUNT_UNLOCK;
 
 	if (zero) {
+		DATABASE_LOCK;
+		assert(hashmap_remove(&song_map, (void *)song->filename) != NULL);
+		DATABASE_UNLOCK;
 		free(song->filename);
 		if (song->title)
 			free(song->title);
-		DATABASE_LOCK;
-		hashmap_remove(&song_map, (void *)song->filename);
-		DATABASE_UNLOCK;
 		free(song);
 	}
 }
@@ -134,6 +174,7 @@ void put_song(struct song *song)
 void get_entry(struct playlist_entry *entry)
 {
 	REF_COUNT_LOCK;
+	assert(entry->refcount > 0);
 	entry->refcount++;
 	REF_COUNT_UNLOCK;
 }
@@ -141,11 +182,13 @@ void get_entry(struct playlist_entry *entry)
 void put_entry(struct playlist_entry *entry)
 {
 	REF_COUNT_LOCK;
+	assert(entry->refcount > 0);
 	entry->refcount--;
 	bool zero = (entry->refcount == 0);
 	REF_COUNT_UNLOCK;
 
 	if (zero) {
+		assert(entry->head.next == NULL);
 		put_song(entry->song);
 		free(entry->ui_ctx);
 		free(entry);
@@ -173,128 +216,103 @@ void set_song_title(struct song *song, const char *str)
 	ui_update_playlist(song);*/
 }
 
-struct playlist_entry *playlist_next(struct playlist_entry *entry, bool forward)
+struct playlist_entry *get_playlist_first(struct playlist *playlist)
 {
-	struct playlist_entry *next = NULL;
-	DATABASE_LOCK;
-	if (entry->head.next) {
-		struct list_head *pos;
-		if (forward)
-			pos = entry->head.next;
-		else
-			pos = entry->head.prev;
-		if (pos != &playlist) {
-			next = container_of(pos, struct playlist_entry, head);
-			get_entry(next);
-		}
-	}
-	DATABASE_UNLOCK;
-	return next;
-}
-
-struct playlist_entry *get_playlist_first(void)
-{
-	DATABASE_LOCK;
+	PLAYLIST_LOCK(playlist);
 	struct playlist_entry *entry = NULL;
-	if (!list_empty(&playlist)) {
-		entry = container_of(playlist.next, struct playlist_entry, head);
+	if (!list_empty(&playlist->entries)) {
+		entry = container_of(playlist->entries.next, struct playlist_entry, head);
 		get_entry(entry);
 	}
-	DATABASE_UNLOCK;
+	PLAYLIST_UNLOCK(playlist);
 
 	return entry;
 }
 
-struct playlist_entry *add_playlist(struct song *song)
+struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song)
 {
 	struct playlist_entry *entry = NEW(struct playlist_entry);
 	if (entry == NULL)
 		return NULL;
-	entry->ui_ctx = malloc(ui_song_ctx_size);
+	entry->ui_ctx = calloc(1, ui_song_ctx_size);
 	entry->refcount = 2; /* yes, return with refcount of two */
 	get_song(song);
 	entry->song = song;
 
-	DATABASE_LOCK;
-	list_add_tail(&entry->head, &playlist);
-	ui_add_playlist(entry);
-	playlist_len++;
-	DATABASE_UNLOCK;
+	PLAYLIST_LOCK(playlist);
+	struct playlist_entry *after = NULL;
+	if (playlist->shuffle) {
+		/* pick a random position */
+		int i = rand() % (playlist->len + 1);
+		if (i) {
+			struct list_head *pos = playlist->entries.next;
+			i--;
+			while (i) {
+				pos = pos->next;
+				i--;
+			}
+			after = container_of(pos, struct playlist_entry, head);
+		}
+	} else {
+		/* add to the end */
+		if (!list_empty(&playlist->entries)) {
+			after = container_of(playlist->entries.prev, struct playlist_entry, head);
+		}
+	}
+	if (after)
+		list_add(&entry->head, &after->head);
+	else
+		list_add(&entry->head, &playlist->entries);
+	ui_add_entry(playlist, after, entry);
+	playlist->len++;
+	PLAYLIST_UNLOCK(playlist);
 	return entry;
 }
 
-void remove_playlist(struct playlist_entry *entry)
+void remove_playlist(struct playlist *playlist, struct playlist_entry *entry)
 {
-	DATABASE_LOCK;
+	PLAYLIST_LOCK(playlist);
 	list_del(&entry->head);
-	playlist_len--;
+	playlist->len--;
 	memset(&entry->head, 0, sizeof(entry->head));
-	ui_remove_playlist(entry);
-	DATABASE_UNLOCK;
+	ui_remove_entry(playlist, entry);
+	PLAYLIST_UNLOCK(playlist);
 
 	put_entry(entry);
 }
 
-void clear_playlist(void)
+void clear_playlist(struct playlist *playlist)
 {
 	struct list_head *pos, *next;
 
-	DATABASE_LOCK;
-	list_for_each_safe(pos, next, &playlist) {
+	PLAYLIST_LOCK(playlist);
+	list_for_each_safe(pos, next, &playlist->entries) {
 		struct playlist_entry *entry
 			= container_of(pos, struct playlist_entry, head);
 		memset(&entry->head, 0, sizeof(entry->head));
-		ui_remove_playlist(entry);
+		ui_remove_entry(playlist, entry);
 		put_entry(entry);
 	}
-	list_init(&playlist);
-	playlist_len = 0;
-	DATABASE_UNLOCK;
+	list_init(&playlist->entries);
+	playlist->len = 0;
+	PLAYLIST_UNLOCK(playlist);
 }
 
-void shuffle_playlist(void)
+void scan_playlist(struct playlist *playlist)
 {
 	struct list_head *pos;
 
-	DATABASE_LOCK;
-	struct playlist_entry **table = malloc(sizeof(void *) * playlist_len);
+	PLAYLIST_LOCK(playlist);
+	struct song **table = malloc(sizeof(void *) * playlist->len);
 	unsigned int len = 0;
-	list_for_each(pos, &playlist) {
-		struct playlist_entry *entry =
-			container_of(pos, struct playlist_entry, head);
-		unsigned int i = rand() % (len + 1);
-		if (i != len)
-			memmove(&table[i + 1], &table[i], (len - i) * sizeof(table[0]));
-		table[i] = entry;
-		ui_remove_playlist(entry);
-		len++;
-	}
-	list_init(&playlist);
-	unsigned int i;
-	for (i = 0; i < playlist_len; ++i) {
-		struct playlist_entry *entry = table[i];
-		list_add_tail(&entry->head, &playlist);
-		ui_add_playlist(entry);
-	}
-	free(table);
-	DATABASE_UNLOCK;
-}
-
-void scan_playlist(void)
-{
-	struct list_head *pos;
-
-	DATABASE_LOCK;
-	struct song **table = malloc(sizeof(void *) * playlist_len);
-	unsigned int len = 0;
-	list_for_each(pos, &playlist) {
+	list_for_each(pos, &playlist->entries) {
 		struct playlist_entry *entry =
 			container_of(pos, struct playlist_entry, head);
 		struct song *song = entry->song;
 		get_song(song);
 		table[len++] = song;
 	}
-	DATABASE_UNLOCK;
+	PLAYLIST_UNLOCK(playlist);
 
 	unsigned int i;
 	for (i = 0; i < len; ++i) {
@@ -304,7 +322,7 @@ void scan_playlist(void)
 	free(table);
 }
 
-bool save_playlist_m3u(const char *filename)
+bool save_playlist_m3u(struct playlist *playlist, const char *filename)
 {
 	FILE *f = fopen(filename, "w");
 	if (!f)
@@ -312,8 +330,8 @@ bool save_playlist_m3u(const char *filename)
 
 	struct list_head *pos;
 
-	DATABASE_LOCK;
-	list_for_each(pos, &playlist) {
+	PLAYLIST_LOCK(playlist);
+	list_for_each(pos, &playlist->entries) {
 		struct playlist_entry *entry =
 			container_of(pos, struct playlist_entry, head);
 		struct song *song = entry->song;
@@ -326,7 +344,7 @@ bool save_playlist_m3u(const char *filename)
 			fprintf(f, ",%s", song->title);
 		fprintf(f, "\n%s\n", song->filename);
 	}
-	DATABASE_UNLOCK;
+	PLAYLIST_UNLOCK(playlist);
 
 	fclose(f);
 	return true;
@@ -347,6 +365,5 @@ void init_playlist(void)
 {
 	pthread_spin_init(&refcountspinlock, 0);
 	pthread_mutex_init(&database_mutex, NULL);
-	list_init(&playlist);
 	hashmap_init(&song_map, song_hash, song_cmp);
 }

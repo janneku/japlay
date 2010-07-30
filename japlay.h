@@ -5,16 +5,18 @@
 
 struct song;
 struct playlist_entry;
+struct playlist;
 
 struct playlist_entry *get_cursor(void);
 
+extern struct playlist *japlay_queue, *japlay_history;
+
 int get_song_info(struct song *song);
 
-struct playlist_entry *add_file_playlist(const char *filename);
+struct playlist_entry *add_file_playlist(struct playlist *playlist,
+					 const char *filename);
 
-int load_playlist(const char *filename);
-
-void play_playlist(struct playlist_entry *entry);
+int load_playlist(struct playlist *playlist, const char *filename);
 
 void japlay_play(void);
 void japlay_set_autovol(bool enabled);

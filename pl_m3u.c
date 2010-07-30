@@ -28,7 +28,7 @@ static bool m3u_detect(const char *filename)
 	return ext && !strcasecmp(ext, "m3u");
 }
 
-static int m3u_load(const char *filename)
+static int m3u_load(struct playlist *playlist, const char *filename)
 {
 	FILE *f = fopen(filename, "r");
 	if (!f)
@@ -46,7 +46,8 @@ static int m3u_load(const char *filename)
 			char *fname = build_filename(filename, trim(row));
 			if (fname == NULL)
 				continue;
-			struct playlist_entry *entry = add_file_playlist(fname);
+			struct playlist_entry *entry =
+				add_file_playlist(playlist, fname);
 			if (entry) {
 				struct song *song = get_entry_song(entry);
 				if (title)

@@ -12,9 +12,10 @@ struct songpos {
 	unsigned long msecs;
 };
 
-#define MIN_FILL	4096 /* minimum buffer length for plugin fillbuf call */
+#define MIN_FILL  4096 /* minimum buffer length for plugin fillbuf call */
 
 struct song;
+struct playlist;
 struct input_state;
 struct input_plugin_ctx;
 
@@ -66,7 +67,7 @@ struct playlist_plugin {
 	/* Name of the plugin */
 	const char *name;
 
-	int (*load)(const char *filename);
+	int (*load)(struct playlist *playlist, const char *filename);
 };
 
 typedef struct input_plugin *(*get_input_plugin_t)(void);

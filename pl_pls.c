@@ -28,7 +28,7 @@ static bool pls_detect(const char *filename)
 	return ext && !strcasecmp(ext, "pls");
 }
 
-static int pls_load(const char *filename)
+static int pls_load(struct playlist *playlist, const char *filename)
 {
 	FILE *f = fopen(filename, "r");
 	if (!f)
@@ -45,7 +45,7 @@ static int pls_load(const char *filename)
 			char *fname = build_filename(filename, trim(value));
 			if (fname) {
 				struct playlist_entry *entry
-					= add_file_playlist(fname);
+					= add_file_playlist(playlist, fname);
 				if (entry)
 					put_entry(entry);
 				free(fname);

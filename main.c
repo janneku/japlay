@@ -64,6 +64,8 @@ static int volume = 256;
 
 static long toseek = 0;
 
+struct playlist *japlay_queue, *japlay_history;
+
 /* Protects "cursor" */
 #define CURSOR_LOCK pthread_mutex_lock(&cursor_mutex)
 #define CURSOR_UNLOCK pthread_mutex_unlock(&cursor_mutex)
@@ -98,16 +100,6 @@ struct input_state {
 };
 
 static struct input_state ds;
-
-struct playlist_entry *get_cursor(void)
-{
-	CURSOR_LOCK;
-	struct playlist_entry *entry = cursor;
-	if (entry)
-		get_entry(entry);
-	CURSOR_UNLOCK;
-	return entry;
-}
 
 void set_streaming_title(struct song *song, const char *title)
 {
@@ -153,20 +145,29 @@ static struct playlist_plugin *detect_playlist_plugin(const char *filename)
 	return NULL;
 }
 
-static void set_cursor_locked(struct playlist_entry *entry)
+static void advance_queue_locked(void)
 {
-	get_entry(entry);
-	ui_set_cursor(cursor, entry);
-	if (cursor)
+	/* from from the queue */
+	if (cursor && get_playlist_first(japlay_queue) == cursor)
+		remove_playlist(japlay_queue, cursor);
+
+	/* add to the song history */
+	if (cursor) {
+		struct playlist_entry *entry =
+			add_playlist(japlay_history, get_entry_song(cursor));
+		if (entry)
+			put_entry(entry);
 		put_entry(cursor);
-	cursor = entry;
+	}
+	cursor = get_playlist_first(japlay_queue);
+	ui_set_cursor(cursor);
 	reset = true;
 }
 
-static void set_cursor(struct playlist_entry *entry)
+static void advance_queue(void)
 {
 	CURSOR_LOCK;
-	set_cursor_locked(entry);
+	advance_queue_locked();
 	CURSOR_UNLOCK;
 }
 
@@ -253,9 +254,16 @@ static void *decode_thread_routine(void *arg)
 		CURSOR_LOCK;
 		if (ds.song == NULL) {
 			/* start a new song */
-			struct song *song = get_entry_song(cursor);
-			get_song(song);
+			struct song *song = NULL;
+			if (cursor) {
+				song = get_entry_song(cursor);
+				get_song(song);
+			}
 			CURSOR_UNLOCK;
+			if (song == NULL) {
+				playing = false;
+				continue;
+			}
 
 			if (init_input(&ds, song)) {
 				char *msg = concat_strings("No plugin for file ",
@@ -304,22 +312,7 @@ static void *decode_thread_routine(void *arg)
 			write_buffer(&play_buffer), avail, &format);
 		if (!filled) {
 		diediedie:
-			reset = true;
-
-			/* if we are still playing the same song, go to next one */
-			CURSOR_LOCK;
-			if (ds.song == get_entry_song(cursor)) {
-				struct playlist_entry *next =
-					playlist_next(cursor, true);
-				if (next) {
-					set_cursor_locked(next);
-					put_entry(next);
-				} else {
-					/* end of playlist, stop */
-					playing = false;
-				}
-			}
-			CURSOR_UNLOCK;
+			advance_queue();
 			continue;
 		}
 
@@ -466,14 +459,16 @@ static void *scan_thread_routine(void *arg)
 		}
 		SCAN_UNLOCK;
 
-		scan_playlist();
+		/* FIXME: implement scan queue */
+		scan_playlist(japlay_queue);
 		scanning = false;
 	}
 
 	return NULL;
 }
 
-struct playlist_entry *add_file_playlist(const char *filename)
+struct playlist_entry *add_file_playlist(struct playlist *playlist,
+					 const char *filename)
 {
 	char *path = absolute_path(filename);
 	if (!path)
@@ -482,17 +477,17 @@ struct playlist_entry *add_file_playlist(const char *filename)
 	free(path);
 	if (song == NULL)
 		return NULL;
-	struct playlist_entry *entry = add_playlist(song);
+	struct playlist_entry *entry = add_playlist(playlist, song);
 	put_song(song);
 	return entry;
 }
 
-int load_playlist(const char *filename)
+int load_playlist(struct playlist *playlist, const char *filename)
 {
 	struct playlist_plugin *plugin = detect_playlist_plugin(filename);
 	if (plugin == NULL)
 		return -1;
-	return plugin->load(filename);
+	return plugin->load(playlist, filename);
 }
 
 static void kick_playback(void)
@@ -511,24 +506,11 @@ void start_playlist_scan(void)
 	SCAN_UNLOCK;
 }
 
-void play_playlist(struct playlist_entry *entry)
-{
-	set_cursor(entry);
-	kick_playback();
-}
-
 void japlay_play(void)
 {
 	CURSOR_LOCK;
-	if (cursor == NULL) {
-		struct playlist_entry *entry = get_playlist_first();
-		if (entry == NULL) {
-			CURSOR_UNLOCK;
-			return;
-		}
-		set_cursor_locked(entry);
-		put_entry(entry);
-	}
+	if (cursor == NULL)
+		advance_queue_locked();
 	CURSOR_UNLOCK;
 	kick_playback();
 }
@@ -556,13 +538,7 @@ void japlay_pause(void)
 
 void japlay_skip(void)
 {
-	struct playlist_entry *entry = get_cursor();
-	struct playlist_entry *next = playlist_next(entry, true);
-	put_entry(entry);
-	if (next) {
-		set_cursor(next);
-		put_entry(next);
-	}
+	advance_queue();
 }
 
 static int dummy_scan(struct song *song)
@@ -680,7 +656,7 @@ static int incoming_data(int fd, int flags, void *ctx)
 		return -1;
 	}
 	filename[len] = 0;
-	struct playlist_entry *entry = add_file_playlist(filename);
+	struct playlist_entry *entry = add_file_playlist(japlay_queue, filename);
 	if (entry)
 		put_entry(entry);
 	return 0;
@@ -756,6 +732,9 @@ int japlay_init(int *argc, char **argv)
 	int fd = unix_socket_create(SOCKET_NAME);
 	if (fd >= 0)
 		new_io_watch(fd, IO_IN, incoming_client, NULL);
+
+	japlay_queue = new_playlist("Play queue");
+	japlay_history = new_playlist("History");
 
 	return 0;
 }
