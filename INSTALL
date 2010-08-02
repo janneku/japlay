@@ -15,3 +15,11 @@ to override.
 * libmikmod2-dev (mikmod for tracker modules)
 * libmad0-dev (mp3)
 * libvorbis-dev
+
+== Dependencies for Fedora systems ==
+
+* gtk2-devel
+* libao-devel
+* libmad-devel
+* libmikmod-devel
+* libvorbis-devel
