@@ -323,8 +323,9 @@ void clear_playlist(struct playlist *playlist)
 	list_for_each_safe(pos, next, &playlist->entries) {
 		struct playlist_entry *entry
 			= container_of(pos, struct playlist_entry, head);
-		memset(&entry->head, 0, sizeof(entry->head));
+		assert(entry->playlist == playlist);
 		ui_remove_entry(playlist, entry);
+		entry->playlist = NULL;
 		put_entry(entry);
 	}
 	list_init(&playlist->entries);
