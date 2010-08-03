@@ -377,7 +377,7 @@ static void enqueue_one_file(GtkTreeRowReference *rowref, gpointer ptr)
 	struct playlist_entry *entry = entry_from_store(ctx->store, path);
 	gtk_tree_path_free(path);
 
-	entry = add_playlist(japlay_queue, get_entry_song(entry));
+	entry = add_playlist(japlay_queue, get_entry_song(entry), false);
 	if (entry)
 		put_entry(entry);
 }
@@ -469,9 +469,12 @@ static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
 	UNUSED(col);
 	UNUSED(ptr);
 	struct playlist_entry *entry = entry_from_store(ctx->store, path);
-	entry = add_playlist(japlay_queue, get_entry_song(entry));
-	if (entry)
+	entry = add_playlist(japlay_queue, get_entry_song(entry), true);
+	if (entry) {
+		/* possible race with the playback engine */
+		japlay_skip();
 		put_entry(entry);
+	}
 }
 
 static void destroy_cb(GtkWidget *widget, gpointer ptr)

@@ -147,14 +147,15 @@ static struct playlist_plugin *detect_playlist_plugin(const char *filename)
 
 static void advance_queue_locked(void)
 {
-	/* from from the queue */
-	if (cursor && get_playlist_first(japlay_queue) == cursor)
+	/* remove from the queue */
+	if (cursor)
 		remove_playlist(japlay_queue, cursor);
 
 	/* add to the song history */
 	if (cursor) {
 		struct playlist_entry *entry =
-			add_playlist(japlay_history, get_entry_song(cursor));
+			add_playlist(japlay_history, get_entry_song(cursor),
+				     false);
 		if (entry)
 			put_entry(entry);
 		put_entry(cursor);
@@ -473,7 +474,7 @@ struct playlist_entry *add_file_playlist(struct playlist *playlist,
 	free(path);
 	if (song == NULL)
 		return NULL;
-	struct playlist_entry *entry = add_playlist(playlist, song);
+	struct playlist_entry *entry = add_playlist(playlist, song, false);
 	put_song(song);
 	return entry;
 }

@@ -29,7 +29,8 @@ void put_entry(struct playlist_entry *entry);
 void set_song_length(struct song *song, unsigned int length, int score);
 void set_song_title(struct song *song, const char *str);
 struct playlist_entry *get_playlist_first(struct playlist *playlist);
-struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song);
+struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song,
+				    bool first);
 void remove_playlist(struct playlist *playlist, struct playlist_entry *entry);
 void clear_playlist(struct playlist *playlist);
 void shuffle_playlist(struct playlist *playlist);

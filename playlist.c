@@ -192,7 +192,7 @@ void put_entry(struct playlist_entry *entry)
 	REF_COUNT_UNLOCK;
 
 	if (zero) {
-		assert(entry->head.next == NULL);
+		assert(entry->playlist == NULL);
 		DATABASE_LOCK;
 		list_del(&entry->song_head);
 		DATABASE_UNLOCK;
@@ -252,7 +252,8 @@ struct playlist_entry *get_playlist_first(struct playlist *playlist)
 	return entry;
 }
 
-struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song)
+struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song,
+				    bool first)
 {
 	struct playlist_entry *entry = NEW(struct playlist_entry);
 	if (entry == NULL)
@@ -265,7 +266,9 @@ struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song
 
 	PLAYLIST_LOCK(playlist);
 	struct playlist_entry *after = NULL;
-	if (playlist->shuffle) {
+	if (first) {
+		/* nothing */
+	} else if (playlist->shuffle) {
 		/* pick a random position */
 		int i = rand() % (playlist->len + 1);
 		if (i) {
@@ -300,10 +303,13 @@ struct playlist_entry *add_playlist(struct playlist *playlist, struct song *song
 void remove_playlist(struct playlist *playlist, struct playlist_entry *entry)
 {
 	PLAYLIST_LOCK(playlist);
-	list_del(&entry->head);
-	playlist->len--;
-	memset(&entry->head, 0, sizeof(entry->head));
-	ui_remove_entry(playlist, entry);
+	if (entry->playlist) {
+		assert(entry->playlist == playlist);
+		list_del(&entry->head);
+		playlist->len--;
+		ui_remove_entry(playlist, entry);
+	}
+	entry->playlist = NULL;
 	PLAYLIST_UNLOCK(playlist);
 
 	put_entry(entry);
