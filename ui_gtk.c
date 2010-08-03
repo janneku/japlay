@@ -647,9 +647,12 @@ int main(int argc, char **argv)
 	/* TODO: load all playlists */
 	main_playlist = new_playlist("Main");
 
-	char *playlistpath = get_config_name("playlist_store.m3u");
+	char *playlistpath = get_config_name("main_playlist.m3u");
 	if (playlistpath)
 		load_playlist(main_playlist, playlistpath);
+	char *queuepath = get_config_name("queue.m3u");
+	if (queuepath)
+		load_playlist(japlay_queue, queuepath);
 
 	for (i = 1; i < argc; ++i)
 		add_file_playlist(main_playlist, argv[i]);
@@ -680,6 +683,8 @@ int main(int argc, char **argv)
 
 	if (playlistpath)
 		save_playlist_m3u(main_playlist, playlistpath);
+	if (queuepath)
+		save_playlist_m3u(japlay_queue, queuepath);
 
 	japlay_exit();
 
