@@ -298,7 +298,7 @@ static void *decode_thread_routine(void *arg)
 				ds.pos_cnt = 0;
 				ds.playpos_cnt = 0;
 			}
-			/* FIXME
+			/* FIXME: clear audio buffer
 			PLAY_LOCK;
 			init_buffer(&play_buffer);
 			PLAY_UNLOCK;*/
@@ -336,6 +336,8 @@ static void *decode_thread_routine(void *arg)
 		ds.pos_cnt -= adv * samplerate / 1000;
 	}
 
+	if (ds.song)
+		finish_input(&ds);
 	return NULL;
 }
 
@@ -439,6 +441,8 @@ static void *play_thread_routine(void *arg)
 		PLAY_UNLOCK;
 	}
 
+	if (dev)
+		ao_close(dev);
 	return NULL;
 }
 
