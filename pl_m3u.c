@@ -56,8 +56,7 @@ static int m3u_load(struct playlist *playlist, const char *filename)
 					set_song_length(song, length * 1000, 20);
 				put_entry(entry);
 			}
-			if (title)
-				free(title);
+			free(title);
 			free(fname);
 			title = NULL;
 			length = -1;
@@ -72,14 +71,12 @@ static int m3u_load(struct playlist *playlist, const char *filename)
 			if (isdigit(*len))
 				length = atoi(len);
 			if (comma) {
-				if (title)
-					free(title);
+				free(title);
 				title = strdup(trim(comma));
 			}
 		}
 	}
-	if (title)
-		free(title);
+	free(title);
 	fclose(f);
 	return 0;
 }

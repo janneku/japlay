@@ -169,8 +169,7 @@ void put_song(struct song *song)
 		assert(hashmap_remove(&song_map, (void *)song->filename) != NULL);
 		DATABASE_UNLOCK;
 		free(song->filename);
-		if (song->title)
-			free(song->title);
+		free(song->title);
 		free(song);
 	}
 }
@@ -224,8 +223,7 @@ void set_song_length(struct song *song, unsigned int length, int score)
 void set_song_title(struct song *song, const char *str)
 {
 	/* TODO: locking */
-	if (song->title)
-		free(song->title);
+	free(song->title);
 	song->title = strdup(str);
 
 	/* notify UI */
