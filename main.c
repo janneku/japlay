@@ -378,7 +378,7 @@ static void *play_thread_routine(void *arg)
 			power = 0;
 			ds.playpos_cnt = 0;
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
-			if (!dev) {
+			if (dev == NULL) {
 				ui_show_message("Unable to open audio device");
 				playing = false;
 				continue;
@@ -472,7 +472,7 @@ struct playlist_entry *add_file_playlist(struct playlist *playlist,
 					 const char *filename)
 {
 	char *path = absolute_path(filename);
-	if (!path)
+	if (path == NULL)
 		return NULL;
 	struct song *song = new_song(path);
 	free(path);
@@ -610,7 +610,7 @@ static void load_plugins(void)
 	list_init(&playlist_plugins);
 
 	DIR *dir = opendir(PLUGIN_DIR);
-	if (!dir)
+	if (dir == NULL)
 		return;
 
 	static const char plugin_dir[] = PLUGIN_DIR "/";
@@ -689,7 +689,7 @@ int japlay_init(int *argc, char **argv)
 {
 	int i, newargc = 1;
 	for (i = 1; i < *argc; ++i) {
-		if (!strcmp(argv[i], "-d")) {
+		if (strcmp(argv[i], "-d") == 0) {
 			japlay_debug = 1;
 		} else
 			argv[newargc++] = argv[i];

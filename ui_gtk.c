@@ -63,7 +63,7 @@ static void set_playlist_color(struct playlist *playlist,
 {
 	struct playlist_ui_ctx *playlist_ctx = get_playlist_ui_ctx(playlist);
 	struct entry_ui_ctx *ctx = get_entry_ui_ctx(entry);
-	if (!ctx->rowref)
+	if (ctx->rowref == NULL)
 		return;
 
 	GtkTreePath *path = gtk_tree_row_reference_get_path(ctx->rowref);
@@ -80,7 +80,7 @@ static char *get_display_name(struct song *song)
 	if (title)
 		return title;
 	const char *filename = get_song_filename(song);
-	if (!memcmp(filename, "http://", 7))
+	if (memcmp(filename, "http://", 7) == 0)
 		return strdup(filename);
 	return g_filename_to_utf8(file_base(filename), -1, NULL, NULL, NULL);
 }
@@ -185,7 +185,7 @@ void ui_update_entry(struct playlist *playlist, struct playlist_entry *entry)
 {
 	struct playlist_ui_ctx *playlist_ctx = get_playlist_ui_ctx(playlist);
 	struct entry_ui_ctx *ctx = get_entry_ui_ctx(entry);
-	if (!ctx->rowref)
+	if (ctx->rowref == NULL)
 		return;
 
 	lock_ui();
