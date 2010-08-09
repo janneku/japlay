@@ -13,6 +13,7 @@
 #include <gdk/gdkkeysyms.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdio.h>
 
 enum {
 	COL_ENTRY,
@@ -254,14 +255,42 @@ void ui_set_streaming_title(const char *title)
 	unlock_ui();
 }
 
-void ui_show_message(const char *msg)
+void ui_error(const char *fmt, ...)
 {
+	GtkWidget *dialog;
+	char buf[8192];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+
+	lock_ui();
+	dialog = gtk_message_dialog_new(GTK_WINDOW(main_window),
+					GTK_DIALOG_DESTROY_WITH_PARENT,
+					GTK_MESSAGE_ERROR,
+					GTK_BUTTONS_CLOSE,
+					buf);
+	gtk_dialog_run(GTK_DIALOG(dialog));
+	gtk_widget_destroy(dialog);
+	unlock_ui();
+}
+
+void ui_show_message(const char *fmt, ...)
+{
+	char buf[8192];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+
 	lock_ui();
 	GtkWidget *dialog = gtk_dialog_new_with_buttons(APP_NAME, GTK_WINDOW(main_window),
 		GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
 		GTK_STOCK_OK, GTK_RESPONSE_ACCEPT, NULL);
 	g_signal_connect(G_OBJECT(dialog), "response", G_CALLBACK(gtk_widget_destroy), NULL);
-	GtkWidget *label = gtk_label_new(msg);
+	GtkWidget *label = gtk_label_new(buf);
 	gtk_container_add(GTK_CONTAINER(GTK_DIALOG(dialog)->vbox), label);
 	gtk_widget_show_all(dialog);
 	unlock_ui();
@@ -290,13 +319,19 @@ static void add_one_file(char *filename, gpointer ptr)
 
 static void add_cb(GtkButton *button, gpointer ptr)
 {
-	struct playlist *playlist = page_playlist();
-	if (playlist == japlay_queue || playlist == japlay_history)
-		return;
+	GtkWidget *dialog;
+	struct playlist *playlist;
 
 	UNUSED(button);
 	UNUSED(ptr);
-	GtkWidget *dialog = gtk_file_chooser_dialog_new("Add Files",
+
+	playlist = page_playlist();
+	if (playlist == japlay_queue || playlist == japlay_history) {
+		ui_error("Can not add files to this playlist.\n\nPlease select a main or a custom playlist.\n");
+		return;
+	}
+
+	dialog = gtk_file_chooser_dialog_new("Add Files",
 		GTK_WINDOW(main_window), GTK_FILE_CHOOSER_ACTION_OPEN,
 		GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
 		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
