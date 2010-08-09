@@ -69,7 +69,6 @@ int unix_socket_connect(const char *path)
 		return -1;
 
 	if (connect(fd, (struct sockaddr *) &addr, sizeof(addr))) {
-		warning("Can not connect (%s)\n", strerror(errno));
 		close(fd);
 		return -1;
 	}
