@@ -21,6 +21,14 @@ char *concat_strings(const char *s, const char *t)
 	return buf;
 }
 
+char *concat_path(const char *s, const char *t)
+{
+	char *buf;
+	if (asprintf(&buf, "%s/%s", s, t) < 0)
+		return NULL;
+	return buf;
+}
+
 size_t str_hash(const char *str)
 {
 	size_t hash = 5381;
@@ -35,7 +43,7 @@ char *get_config_dir(void)
 	if (home == NULL)
 		return NULL;
 
-	return concat_strings(home, "/.japlay");
+	return concat_path(home, ".japlay");
 }
 
 /*
@@ -63,9 +71,7 @@ char *absolute_path(const char *filename)
 	if (cwd == NULL)
 		return NULL;
 
-	char *name;
-	if (asprintf(&name, "%s/%s", cwd, filename) < 0)
-		name = NULL;
+	char *name = concat_path(cwd, filename);
 	free(cwd);
 	return name;
 }
@@ -110,9 +116,7 @@ char *build_filename(const char *orig, const char *filename)
 	if (dir == NULL)
 		return NULL;
 
-	char *name;
-	if (asprintf(&name, "%s/%s", dir, filename) < 0)
-		name = NULL;
+	char *name = concat_path(dir, filename);
 	free(dir);
 	return name;
 }

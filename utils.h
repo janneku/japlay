@@ -6,6 +6,7 @@
 #undef strdup /* glibc braindamage */
 
 char *concat_strings(const char *s, const char *t);
+char *concat_path(const char *s, const char *t);
 size_t str_hash(const char *str);
 char *get_config_dir(void);
 char *get_config_name(const char *part);
