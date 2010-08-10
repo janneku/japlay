@@ -13,16 +13,6 @@ struct input_plugin_ctx {
 	MODULE *mf;
 };
 
-static const char *file_ext(const char *filename)
-{
-	size_t i = strlen(filename);
-	while (i && filename[i - 1] != '/') {
-		if (filename[i - 1] == '.')
-			return &filename[i];
-		--i;
-	}
-	return NULL;
-}
 static bool mikmod_detect(const char *filename)
 {
 	const char *ext = file_ext(filename);

@@ -11,17 +11,6 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-static const char *file_ext(const char *filename)
-{
-	size_t i = strlen(filename);
-	while (i && filename[i - 1] != '/') {
-		if (filename[i - 1] == '.')
-			return &filename[i];
-		--i;
-	}
-	return NULL;
-}
-
 static bool pls_detect(const char *filename)
 {
 	const char *ext = file_ext(filename);

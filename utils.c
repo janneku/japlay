@@ -78,6 +78,17 @@ const char *file_base(const char *filename)
 	return &filename[i];
 }
 
+const char *file_ext(const char *filename)
+{
+	size_t i = strlen(filename);
+	while (i && filename[i - 1] != '/') {
+		if (filename[i - 1] == '.')
+			return &filename[i];
+		--i;
+	}
+	return NULL;
+}
+
 char *file_dir(const char *filename)
 {
 	size_t i = strlen(filename);

@@ -207,17 +207,6 @@ static int wait_on_socket(int fd, bool for_recv, int timeout_ms)
 	return 0;
 }
 
-static const char *file_ext(const char *filename)
-{
-	size_t i = strlen(filename);
-	while (i && filename[i - 1] != '/') {
-		if (filename[i - 1] == '.')
-			return &filename[i];
-		--i;
-	}
-	return NULL;
-}
-
 static bool mad_detect(const char *filename)
 {
 	const char *ext = file_ext(filename);
