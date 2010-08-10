@@ -483,6 +483,37 @@ struct playlist_entry *add_file_playlist(struct playlist *playlist,
 	return entry;
 }
 
+int add_dir_playlist(struct playlist *playlist, const char *directory)
+{
+	DIR *dir = opendir(directory);
+	if (dir == NULL)
+		return -1;
+
+	struct dirent *de = readdir(dir);
+	while (de) {
+		/* skip parent directory link and hidden files */
+		if (de->d_name[0] == '.') {
+			de = readdir(dir);
+			continue;
+		}
+		char *buf = concat_path(directory, de->d_name);
+		if (buf) {
+			/* first try open as a directory */
+			if (add_dir_playlist(playlist, buf)) {
+				struct playlist_entry *entry =
+					add_file_playlist(playlist, buf);
+				if (entry)
+					put_entry(entry);
+			}
+			free(buf);
+		}
+		de = readdir(dir);
+	}
+
+	closedir(dir);
+	return 0;
+}
+
 int load_playlist(struct playlist *playlist, const char *filename)
 {
 	struct playlist_plugin *plugin = detect_playlist_plugin(filename);
@@ -613,17 +644,18 @@ static void load_plugins(void)
 	if (dir == NULL)
 		return;
 
-	static const char plugin_dir[] = PLUGIN_DIR "/";
-
 	struct dirent *de = readdir(dir);
 	while (de) {
-		if (de->d_name[0] != '.') {
-			char *buf = concat_strings(plugin_dir, de->d_name);
-			if (buf) {
-				if (!load_plugin(buf))
-					warning("Unable to load plugin %s\n", de->d_name);
-				free(buf);
-			}
+		/* skip parent directory link and hidden files */
+		if (de->d_name[0] == '.') {
+			de = readdir(dir);
+			continue;
+		}
+		char *buf = concat_path(PLUGIN_DIR, de->d_name);
+		if (buf) {
+			if (!load_plugin(buf))
+				warning("Unable to load plugin %s\n", de->d_name);
+			free(buf);
 		}
 		de = readdir(dir);
 	}

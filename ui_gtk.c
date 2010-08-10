@@ -346,6 +346,34 @@ static void add_cb(GtkButton *button, gpointer ptr)
 	gtk_widget_destroy(dialog);
 }
 
+static void add_dir_cb(GtkMenuItem *menuitem, gpointer ptr)
+{
+	GtkWidget *dialog;
+	struct playlist *playlist;
+
+	UNUSED(menuitem);
+	UNUSED(ptr);
+
+	playlist = page_playlist();
+	if (playlist == japlay_queue || playlist == japlay_history) {
+		ui_error("Can not add files to this playlist.\n\nPlease select a main or a custom playlist.\n");
+		return;
+	}
+
+	dialog = gtk_file_chooser_dialog_new("Add directory",
+		GTK_WINDOW(main_window), GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER,
+		GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
+		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
+		NULL);
+
+	if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+		char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+		add_dir_playlist(playlist, filename);
+		g_free(filename);
+	}
+	gtk_widget_destroy(dialog);
+}
+
 static void new_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
 	UNUSED(menuitem);
@@ -602,8 +630,15 @@ int main(int argc, char **argv)
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(new_playlist_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
+	item = gtk_menu_item_new_with_label("Add directory to the playlist...");
+	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(add_dir_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
 	item = gtk_menu_item_new_with_label("Clear playlist");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(clear_playlist_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
+	item = gtk_separator_menu_item_new();
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("Enable shuffle");
@@ -613,6 +648,9 @@ int main(int argc, char **argv)
 	/*item = gtk_menu_item_new_with_label("Scan playlist");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(scan_playlist_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);*/
+
+	item = gtk_separator_menu_item_new();
+	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	item = gtk_menu_item_new_with_label("Quit");
 	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(destroy_cb), NULL);
@@ -630,10 +668,10 @@ int main(int argc, char **argv)
 		{GTK_STOCK_MEDIA_PLAY, "Play", play_cb},
 		{GTK_STOCK_MEDIA_STOP, "stop", stop_cb},
 		{GTK_STOCK_MEDIA_PAUSE, "Pause", pause_cb},
-		{GTK_STOCK_OPEN, "Add files to the playlist", add_cb},
 		{GTK_STOCK_MEDIA_NEXT, "Skip to the next song in the queue", next_cb},
-		{GTK_STOCK_OK, "Add songs to the queue", enqueue_cb},
-		{GTK_STOCK_DELETE, "Remove songs from the playlist", remove_cb},
+		{GTK_STOCK_OPEN, "Add files to the playlist", add_cb},
+		{GTK_STOCK_OK, "Add selected songs to the queue", enqueue_cb},
+		{GTK_STOCK_DELETE, "Remove selected songs", remove_cb},
 		{NULL, NULL, NULL}
 	};
 
