@@ -400,18 +400,16 @@ static struct playlist_entry *entry_from_store(GtkListStore *store, GtkTreePath 
 	return entry;
 }
 
-static void enqueue_one_file(GtkTreeRowReference *rowref, gpointer ptr)
+static void enqueue_one_file(GtkTreeModel *model, GtkTreePath *path,
+			     GtkTreeIter *iter, gpointer ptr)
 {
 	struct playlist *playlist = page_playlist();
 	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
 
+	UNUSED(model);
+	UNUSED(iter);
 	UNUSED(ptr);
-	GtkTreePath *path = gtk_tree_row_reference_get_path(rowref);
-	gtk_tree_row_reference_free(rowref);
-
 	struct playlist_entry *entry = entry_from_store(ctx->store, path);
-	gtk_tree_path_free(path);
-
 	entry = add_playlist(japlay_queue, get_entry_song(entry), false);
 	if (entry)
 		put_entry(entry);
@@ -424,13 +422,9 @@ static void enqueue_cb(GtkButton *button, gpointer ptr)
 
 	UNUSED(button);
 	UNUSED(ptr);
-	GList *selected = gtk_tree_selection_get_selected_rows(
-		gtk_tree_view_get_selection(GTK_TREE_VIEW(ctx->view)), NULL);
-	GList *rr_list = NULL;
-	g_list_foreach(selected, (GFunc)append_rr_list, &rr_list);
-	g_list_free(selected);
-	g_list_foreach(rr_list, (GFunc)enqueue_one_file, NULL);
-	g_list_free(rr_list);
+	gtk_tree_selection_selected_foreach(
+		gtk_tree_view_get_selection(GTK_TREE_VIEW(ctx->view)),
+		enqueue_one_file, NULL);
 }
 
 static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
