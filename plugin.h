@@ -55,6 +55,9 @@ struct input_plugin {
 
 	/* Return -1 for EOF, 0 if not supported, and 1 if seek successful */
 	int (*seek)(struct input_plugin_ctx *ctx, struct songpos *newpos);
+
+	/* NULL-terminated list of mime types the plugin can handle */
+	const char **mime_types;
 };
 
 struct playlist_plugin {

@@ -151,6 +151,12 @@ static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		/ sizeof(sample_t);
 }
 
+static const char *mime_types[] = {
+	"audio/x-mod",
+	"audio/x-s3m",
+	NULL
+};
+
 static struct input_plugin plugin_info = {
 	.size = sizeof(struct input_plugin),
 	.ctx_size = sizeof(struct input_plugin_ctx),
@@ -160,6 +166,7 @@ static struct input_plugin plugin_info = {
 	.open = mikmod_open,
 	.close = mikmod_close,
 	.fillbuf = mikmod_fillbuf,
+	.mime_types = mime_types,
 };
 
 struct input_plugin *get_input_plugin()

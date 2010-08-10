@@ -82,6 +82,12 @@ static int vorbis_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	return 1;
 }
 
+static const char *mime_types[] = {
+	"audio/ogg",
+	"audio/vorbis",
+	NULL
+};
+
 static struct input_plugin plugin_info = {
 	.size = sizeof(struct input_plugin),
 	.ctx_size = sizeof(struct input_plugin_ctx),
@@ -91,6 +97,7 @@ static struct input_plugin plugin_info = {
 	.close = vorbis_close,
 	.fillbuf = vorbis_fillbuf,
 	.seek = vorbis_seek,
+	.mime_types = mime_types,
 };
 
 struct input_plugin *get_input_plugin()

@@ -626,6 +626,11 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	return 1;
 }
 
+static const char *mime_types[] = {
+	"audio/mpeg",
+	NULL
+};
+
 static struct input_plugin plugin_info = {
 	.size = sizeof(struct input_plugin),
 	.ctx_size = sizeof(struct input_plugin_ctx),
@@ -635,6 +640,7 @@ static struct input_plugin plugin_info = {
 	.close = mad_close,
 	.fillbuf = mad_fillbuf,
 	.seek = mad_seek,
+	.mime_types = mime_types,
 };
 
 
