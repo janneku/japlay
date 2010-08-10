@@ -306,11 +306,10 @@ void remove_playlist(struct playlist *playlist, struct playlist_entry *entry)
 		list_del(&entry->head);
 		playlist->len--;
 		ui_remove_entry(playlist, entry);
+		entry->playlist = NULL;
+		put_entry(entry);
 	}
-	entry->playlist = NULL;
 	PLAYLIST_UNLOCK(playlist);
-
-	put_entry(entry);
 }
 
 void clear_playlist(struct playlist *playlist)
