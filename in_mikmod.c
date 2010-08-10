@@ -6,11 +6,17 @@
 #include "playlist.h"
 #include "utils.h"
 #include "plugin.h"
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <mikmod.h>
 
 struct input_plugin_ctx {
 	struct input_state *state;
 	MODULE *mf;
+	MREADER mr;
+	int fd;
+	bool eof;
 };
 
 static bool mikmod_detect(const char *filename)
@@ -24,7 +30,7 @@ static bool mikmod_detect(const char *filename)
 		!strcasecmp(ext, "it");
 }
 
-static bool dummy_IsThere()
+static BOOL dummy_IsThere()
 {
 	return true;
 }
@@ -34,11 +40,64 @@ static void dummy_Update()
 	//length = VC_WriteBytes((SBYTE *) audiobuffer, buffer_size);
 }
 
-static bool dummy_Reset(void)
+static BOOL reader_Seek(struct MREADER *mr, long off, int whence)
 {
-	VC_Exit();
-	return VC_Init();
+	struct input_plugin_ctx *ctx =
+		container_of(mr, struct input_plugin_ctx, mr);
+	lseek(ctx->fd, off, whence);
+	return true;
 }
+
+static long reader_Tell(struct MREADER *mr)
+{
+	struct input_plugin_ctx *ctx =
+		container_of(mr, struct input_plugin_ctx, mr);
+	return lseek(ctx->fd, 0, SEEK_CUR);
+}
+
+static BOOL reader_Read(struct MREADER *mr, void *buf, size_t maxlen)
+{
+	struct input_plugin_ctx *ctx =
+		container_of(mr, struct input_plugin_ctx, mr);
+	ssize_t len = read(ctx->fd, buf, maxlen);
+	if (len < 0) {
+		warning("read failed (%s)\n", strerror(errno));
+		ctx->eof = true;
+		return false;
+	}
+	if ((size_t)len < maxlen) {
+		ctx->eof = true;
+		return false;
+	}
+	return true;
+}
+
+static int reader_Get(struct MREADER *mr)
+{
+	struct input_plugin_ctx *ctx =
+		container_of(mr, struct input_plugin_ctx, mr);
+	unsigned char c;
+	if (read(ctx->fd, &c, 1) < 1) {
+		ctx->eof = true;
+		return EOF;
+	}
+	return c;
+}
+
+static BOOL reader_Eof(struct MREADER *mr)
+{
+	struct input_plugin_ctx *ctx =
+		container_of(mr, struct input_plugin_ctx, mr);
+	return ctx->eof;
+}
+
+static MREADER my_reader = {
+	reader_Seek,
+	reader_Tell,
+	reader_Read,
+	reader_Get,
+	reader_Eof
+};
 
 static MDRIVER drv_dummy = {
 	NULL,
@@ -57,7 +116,7 @@ static MDRIVER drv_dummy = {
 	VC_SampleLength,
 	VC_Init,
 	VC_Exit,
-	dummy_Reset,
+	NULL,
 	VC_SetNumVoices,
 	VC_PlayStart,
 	VC_PlayStop,
@@ -114,9 +173,18 @@ static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
 
 	init_mikmod();
 
-	ctx->mf = Player_Load((char *)filename, 128, true);
+	ctx->fd = open(filename, O_RDONLY);
+	if (ctx->fd < 0) {
+		warning("unable to open file (%s)\n", strerror(errno));
+		return -1;
+	}
+
+	ctx->mr = my_reader;
+
+	ctx->mf = Player_LoadGeneric(&ctx->mr, 128, true);
 	if (ctx->mf == NULL) {
 		warning("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
+		close(ctx->fd);
 		return -1;
 	}
 
@@ -131,6 +199,7 @@ static void mikmod_close(struct input_plugin_ctx *ctx)
 {
 	Player_Stop();
 	Player_Free(ctx->mf);
+	close(ctx->fd);
 }
 
 static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
