@@ -62,7 +62,7 @@ static BOOL reader_Read(struct MREADER *mr, void *buf, size_t maxlen)
 
 	ssize_t len = read_in_full(ctx->fd, buf, maxlen);
 	if (len < 0)
-		warning("read failed (%s)\n", strerror(errno));
+		linewarning("read failed (%s)\n", strerror(errno));
 	if ((size_t) len != maxlen) {
 		ctx->eof = true;
 		return false;
