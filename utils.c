@@ -7,7 +7,6 @@
 #include "utils.h"
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
 #include <assert.h>
 #include <stdio.h>
@@ -119,6 +118,28 @@ char *build_filename(const char *orig, const char *filename)
 	char *name = concat_path(dir, filename);
 	free(dir);
 	return name;
+}
+
+ssize_t read_in_full(int fd, void *buf, size_t count)
+{
+	char *p = buf;
+	ssize_t ret;
+	ssize_t bytes = 0;
+
+	while (count > 0) {
+		ret = read(fd, p + bytes, count);
+		if (ret < 0) {
+			if (errno == EINTR || errno == EAGAIN)
+				continue;
+			return bytes ? bytes : -1;
+		} else if (ret == 0) {
+			return bytes;
+		}
+		count -= ret;
+		bytes += ret;
+	}
+
+	return bytes;
 }
 
 char *trim(char *buf)
