@@ -6,7 +6,7 @@ LDFLAGS = `pkg-config ao glib-2.0 gthread-2.0 --libs` -lpthread
 PLUGIN_CFLAGS = $(CFLAGS) -fPIC
 PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 
-OBJ = main.o utils.o playlist.o iowatch.o unixsocket.o buffer.o hashmap.o
+OBJ = main.o utils.o playlist.o unixsocket.o buffer.o hashmap.o
 PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o
 GTK_BINARY = japlay
 PLUGINS = in_mad.so in_mikmod.so in_vorbis.so pl_m3u.so pl_pls.so
@@ -66,12 +66,11 @@ buffer.o:       buffer.c common.h buffer.h plugin.h
 in_mad.o:       in_mad.c common.h playlist.h plugin.h
 in_mikmod.o:    in_mikmod.c plugin.h utils.h playlist.h common.h
 in_vorbis.o:    in_vorbis.c plugin.h utils.h playlist.h common.h
-iowatch.o:      iowatch.c list.h iowatch.h common.h
-main.o: main.c buffer.h config.h list.h unixsocket.h iowatch.h ui.h playlist.h utils.h common.h japlay.h plugin.h
+main.o: main.c buffer.h config.h list.h ui.h playlist.h utils.h common.h japlay.h plugin.h
 playlist.o:     playlist.c utils.h list.h ui.h japlay.h common.h playlist.h hashmap.h
 pl_m3u.o:       pl_m3u.c plugin.h utils.h playlist.h japlay.h common.h
 pl_pls.o:       pl_pls.c plugin.h utils.h playlist.h japlay.h common.h
-ui_gtk.o:       ui_gtk.c iowatch.h utils.h playlist.h japlay.h common.h ui.h
+ui_gtk.o:       ui_gtk.c utils.h playlist.h japlay.h common.h ui.h unixsocket.h
 unixsocket.o:   unixsocket.c unixsocket.h common.h
 utils.o:        utils.c utils.h
 

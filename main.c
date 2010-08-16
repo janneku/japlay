@@ -8,8 +8,6 @@
 #include "playlist.h"
 #include "plugin.h"
 #include "ui.h"
-#include "iowatch.h"
-#include "unixsocket.h"
 #include "list.h"
 #include "config.h"
 #include "buffer.h"
@@ -20,8 +18,6 @@
 #include <dlfcn.h>
 #include <ao/ao.h>
 #include <limits.h>
-#include <sys/un.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <pthread.h>
 
@@ -663,60 +659,6 @@ static void load_plugins(void)
 	closedir(dir);
 }
 
-int japlay_connect(void)
-{
-	return unix_socket_connect(SOCKET_NAME);
-}
-
-void japlay_send(int fd, const char *filename)
-{
-	char *path = absolute_path(filename);
-	if (path) {
-		sendto(fd, path, strlen(path), 0, NULL, 0);
-		free(path);
-	}
-}
-
-static int incoming_data(int fd, int flags, void *ctx)
-{
-	UNUSED(flags);
-	UNUSED(ctx);
-
-	char filename[FILENAME_MAX + 1];
-	ssize_t len = recvfrom(fd, filename, FILENAME_MAX, 0, NULL, 0);
-	if (len < 0) {
-		if (errno == EAGAIN)
-			return 0;
-		warning("recv failed (%s)\n", strerror(errno));
-		close(fd);
-		return -1;
-	}
-	if (len == 0) {
-		close(fd);
-		return -1;
-	}
-	filename[len] = 0;
-	struct playlist_entry *entry = add_file_playlist(japlay_queue, filename);
-	if (entry)
-		put_entry(entry);
-	return 0;
-}
-
-static int incoming_client(int fd, int flags, void *ctx)
-{
-	UNUSED(flags);
-	UNUSED(ctx);
-
-	struct sockaddr_un addr;
-	socklen_t addrlen = sizeof(addr);
-	int rfd = accept(fd, (struct sockaddr *)&addr, &addrlen);
-	if (rfd < 0)
-		warning("accept failure (%s)\n", strerror(errno));
-	else
-		new_io_watch(rfd, IO_IN, incoming_data, NULL);
-	return 0;
-}
-
 int japlay_init(int *argc, char **argv)
 {
 	int i, newargc = 1;
@@ -751,7 +693,6 @@ int japlay_init(int *argc, char **argv)
 	}
 
 	init_playlist();
-	iowatch_init();
 
 	init_buffer(&play_buffer);
 
@@ -769,10 +710,6 @@ int japlay_init(int *argc, char **argv)
 	pthread_create(&play_thread, NULL, play_thread_routine, NULL);
 	pthread_create(&scan_thread, NULL, scan_thread_routine, NULL);
 
-	int fd = unix_socket_create(SOCKET_NAME);
-	if (fd >= 0)
-		new_io_watch(fd, IO_IN, incoming_client, NULL);
-
 	japlay_queue = new_playlist("Play queue");
 	japlay_history = new_playlist("History");
 
@@ -789,6 +726,4 @@ void japlay_exit(void)
 	pthread_join(decode_thread, &retval);
 	pthread_join(play_thread, &retval);
 	pthread_join(scan_thread, &retval);
-
-	unlink(SOCKET_NAME);
 }

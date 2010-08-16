@@ -7,13 +7,19 @@
 #include "japlay.h"
 #include "playlist.h"
 #include "utils.h"
-#include "iowatch.h"
+#include "unixsocket.h"
+
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
 #include <gdk/gdkkeysyms.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <sys/un.h>
+#include <sys/socket.h>
+#include <errno.h>
+
+#define SOCKET_NAME		"/tmp/japlay"
 
 enum {
 	COL_ENTRY,
@@ -41,8 +47,6 @@ static GtkWidget *power_bar;
 static GtkWidget *seekbar;
 static GtkWidget *notebook;
 static GThread *main_thread;
-static bool quit = false;
-static int wake_fd;
 static struct playlist *pages[64] = {NULL,};
 static struct playlist *main_playlist;
 
@@ -226,7 +230,6 @@ void ui_set_cursor(struct playlist_entry *entry)
 		gtk_window_set_title(GTK_WINDOW(main_window), APP_NAME);
 		gtk_adjustment_set_upper(adj, 1);
 	}
-	write(wake_fd, "", 1);
 	unlock_ui();
 }
 
@@ -239,8 +242,6 @@ void ui_set_status(int power, unsigned int position)
 	gtk_progress_bar_set_text(GTK_PROGRESS_BAR(power_bar), buf);
 	GtkAdjustment *adj = gtk_range_get_adjustment(GTK_RANGE(seekbar));
 	gtk_adjustment_set_value(adj, position / 1000.0);
-
-	write(wake_fd, "", 1);
 	unlock_ui();
 }
 
@@ -549,7 +550,7 @@ static void destroy_cb(GtkWidget *widget, gpointer ptr)
 {
 	UNUSED(widget);
 	UNUSED(ptr);
-	quit = true;
+	gtk_main_quit();
 }
 
 static gboolean seek_cb(GtkRange *range, GtkScrollType scroll, double value,
@@ -560,17 +561,6 @@ static gboolean seek_cb(GtkRange *range, GtkScrollType scroll, double value,
 	UNUSED(ptr);
 	japlay_seek(value * 1000.0);
 	return true;
-}
-
-static int incoming_wake(int fd, int flags, void *ctx)
-{
-	UNUSED(flags);
-	UNUSED(ctx);
-
-	/* drain pipe read buffer */
-	char buf[64];
-	read(fd, buf, sizeof buf);
-	return 0;
 }
 
 static gboolean key_pressed_cb(GtkWidget *widget, GdkEventKey *key, gpointer data)
@@ -590,18 +580,54 @@ static gboolean key_pressed_cb(GtkWidget *widget, GdkEventKey *key, gpointer dat
 	return FALSE;
 }
 
-static int incoming_x11_event(int fd, int flags, void *ctx)
-{
-	UNUSED(fd);
-	UNUSED(flags);
-	UNUSED(ctx);
-	return 0;
-}
-
 static void handle_sigint(int sig)
 {
 	UNUSED(sig);
-	quit = true;
+	gtk_main_quit();
+}
+
+static gboolean incoming_data(GIOChannel *io, GIOCondition cond, gpointer ptr)
+{
+	int fd = g_io_channel_unix_get_fd(io);
+	UNUSED(cond);
+	UNUSED(ptr);
+
+	char filename[FILENAME_MAX + 1];
+	ssize_t len = recvfrom(fd, filename, FILENAME_MAX, 0, NULL, 0);
+	if (len < 0) {
+		if (errno == EAGAIN)
+			return 0;
+		warning("recv failed (%s)\n", strerror(errno));
+		g_io_channel_close(io);
+		return FALSE;
+	}
+	if (len == 0) {
+		g_io_channel_close(io);
+		return FALSE;
+	}
+	filename[len] = 0;
+	struct playlist_entry *entry = add_file_playlist(main_playlist, filename);
+	if (entry)
+		put_entry(entry);
+	return TRUE;
+}
+
+static gboolean incoming_client(GIOChannel *io, GIOCondition cond, gpointer ptr)
+{
+	int fd = g_io_channel_unix_get_fd(io);
+	UNUSED(cond);
+	UNUSED(ptr);
+
+	struct sockaddr_un addr;
+	socklen_t addrlen = sizeof(addr);
+	int rfd = accept(fd, (struct sockaddr *)&addr, &addrlen);
+	if (rfd < 0) {
+		warning("accept failure (%s)\n", strerror(errno));
+		return TRUE;
+	}
+	io = g_io_channel_unix_new(rfd);
+	g_io_add_watch(io, G_IO_IN, incoming_data, NULL);
+	return TRUE;
 }
 
 int main(int argc, char **argv)
@@ -611,11 +637,16 @@ int main(int argc, char **argv)
 
 	main_thread = g_thread_self();
 
-	int fd = japlay_connect();
+	int fd = unix_socket_connect(SOCKET_NAME);
 	if (fd >= 0) {
 		int i;
-		for (i = 1; i < argc; ++i)
-			japlay_send(fd, argv[i]);
+		for (i = 1; i < argc; ++i) {
+			char *path = absolute_path(argv[i]);
+			if (path) {
+				sendto(fd, path, strlen(path), 0, NULL, 0);
+				free(path);
+			}
+		}
 		close(fd);
 		return 0;
 	}
@@ -733,29 +764,18 @@ int main(int argc, char **argv)
 	for (i = 1; i < argc; ++i)
 		add_file_playlist(main_playlist, argv[i]);
 
-	int pipefd[2];
-	pipe(pipefd);
-	wake_fd = pipefd[1];
-
-	new_io_watch(pipefd[0], IO_IN, incoming_wake, NULL);
-	new_io_watch(ConnectionNumber(GDK_DISPLAY()), IO_IN, incoming_x11_event, NULL);
-
 	signal(SIGINT, handle_sigint);
 
-	while (!quit) {
-		gdk_threads_enter();
-
-		/* process events before going to sleep */
-		while (gtk_events_pending())
-			gtk_main_iteration();
-
-		gdk_threads_leave();
-
-		if (quit)
-			break;
-
-		iowatch_poll();
+	fd = unix_socket_create(SOCKET_NAME);
+	if (fd >= 0) {
+		GIOChannel *io = g_io_channel_unix_new(fd);
+		g_io_add_watch(io, G_IO_IN, incoming_client, NULL);
 	}
+
+	gtk_main();
+
+	if (fd >= 0)
+		unlink(SOCKET_NAME);
 
 	if (playlistpath)
 		save_playlist_m3u(main_playlist, playlistpath);
