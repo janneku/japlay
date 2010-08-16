@@ -388,11 +388,22 @@ static void clear_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
 	clear_playlist(page_playlist());
 }
 
-static void shuffle_cb(GtkMenuItem *menuitem, gpointer ptr)
+static void enable_shuffle_cb(GtkCheckMenuItem *menuitem, gpointer ptr)
 {
-	UNUSED(menuitem);
 	UNUSED(ptr);
-	set_playlist_shuffle(japlay_queue, true);
+
+	bool enabled = gtk_check_menu_item_get_active(menuitem);
+	info("shuffle: %d\n", enabled);
+	set_playlist_shuffle(japlay_queue, enabled);
+}
+
+static void enable_autovol_cb(GtkCheckMenuItem *menuitem, gpointer ptr)
+{
+	UNUSED(ptr);
+
+	bool enabled = gtk_check_menu_item_get_active(menuitem);
+	info("autovol: %d\n", enabled);
+	japlay_set_autovol(enabled);
 }
 
 static void scan_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
@@ -573,12 +584,6 @@ static gboolean key_pressed_cb(GtkWidget *widget, GdkEventKey *key, gpointer dat
 	case GDK_Right:
 		japlay_seek_relative(10000);
 		return TRUE;
-	case 'a':
-		japlay_set_autovol(true);
-		return TRUE;
-	case 'A':
-		japlay_set_autovol(false);
-		return TRUE;
 	default:
 		break;
 	}
@@ -641,8 +646,12 @@ int main(int argc, char **argv)
 	item = gtk_separator_menu_item_new();
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
-	item = gtk_menu_item_new_with_label("Enable shuffle");
-	g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(shuffle_cb), NULL);
+	item = gtk_check_menu_item_new_with_label("Enable shuffle");
+	g_signal_connect(G_OBJECT(item), "toggled", G_CALLBACK(enable_shuffle_cb), NULL);
+	gtk_menu_append(GTK_MENU(file_menu), item);
+
+	item = gtk_check_menu_item_new_with_label("Enable automatic volume");
+	g_signal_connect(G_OBJECT(item), "toggled", G_CALLBACK(enable_autovol_cb), NULL);
 	gtk_menu_append(GTK_MENU(file_menu), item);
 
 	/*item = gtk_menu_item_new_with_label("Scan playlist");
