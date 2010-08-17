@@ -345,6 +345,7 @@ static void *play_thread_routine(void *arg)
 	ao_sample_format format = {.bits = 16, .byte_format = AO_FMT_NATIVE,
 			.rate = 0, .channels = 0};
 	unsigned int power_cnt = 0, power = 0;
+	int scope[SCOPE_SIZE];
 
 	while (!quit) {
 		size_t avail;
@@ -399,8 +400,14 @@ static void *play_thread_routine(void *arg)
 			}
 		}
 
-		for (i = power_cnt & 31; i < avail; i += 32)
+		for (i = 31 - (power_cnt & 31); i < avail; i += 32) {
 			power += abs(buffer[i]) / 256;
+
+			int j = (power_cnt + i) / 32;
+			if (j < SCOPE_SIZE)
+				scope[j] = buffer[i];
+		}
+		power_cnt += avail;
 
 		ds.playpos_cnt += avail;
 
@@ -411,7 +418,6 @@ static void *play_thread_routine(void *arg)
 		ds.playpos_cnt -= adv * samplerate / 1000;
 
 		/* Update UI status */
-		power_cnt += avail;
 		if (power_cnt >= samplerate / REFRESH_RATE) {
 			/* Scale power to 0..255 */
 			power = power * 64 / power_cnt;
@@ -423,7 +429,7 @@ static void *play_thread_routine(void *arg)
 				info("autovol %d%%\n", volume * 100 / 256);
 			}
 
-			ui_set_status(power, ds.playposition);
+			ui_set_status(scope, power_cnt / 32, ds.playposition);
 			power_cnt = 0;
 			power = 0;
 		}

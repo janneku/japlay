@@ -5,6 +5,8 @@
 
 /* User interface prototype */
 
+#define SCOPE_SIZE	256  /* enough for 50 KHz, stereo */
+
 struct song;
 struct entry_ui_ctx;
 struct playlist;
@@ -21,7 +23,7 @@ void ui_show_playlist(struct playlist *playlist);
 void ui_hide_playlist(struct playlist *playlist);
 void ui_update_entry(struct playlist *playlist, struct playlist_entry *entry);
 void ui_set_cursor(struct playlist_entry *entry);
-void ui_set_status(int power, unsigned int position);
+void ui_set_status(int *scope, size_t scope_len, unsigned int position);
 void ui_set_streaming_title(const char *title);
 void ui_show_message(const char *fmt, ...);
 

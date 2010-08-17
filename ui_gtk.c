@@ -39,16 +39,19 @@ struct playlist_ui_ctx {
 	GtkWidget *page;
 };
 
+#define SCOPE_WIDTH		150
+
 size_t ui_song_ctx_size = sizeof(struct entry_ui_ctx);
 size_t ui_playlist_ctx_size = sizeof(struct playlist_ui_ctx);
 
 static GtkWidget *main_window;
-static GtkWidget *power_bar;
+static GtkWidget *scope_area;
 static GtkWidget *seekbar;
 static GtkWidget *notebook;
 static GThread *main_thread;
 static struct playlist *pages[64] = {NULL,};
 static struct playlist *main_playlist;
+static GdkPoint scope_points[SCOPE_WIDTH];
 
 static void lock_ui()
 {
@@ -233,13 +236,26 @@ void ui_set_cursor(struct playlist_entry *entry)
 	unlock_ui();
 }
 
-void ui_set_status(int power, unsigned int position)
+void ui_set_status(int *scope, size_t scope_len, unsigned int position)
 {
+	if (scope_len > SCOPE_SIZE)
+		scope_len = SCOPE_SIZE;
+
 	lock_ui();
-	gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(power_bar), power / 256.0);
+	/*gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(power_bar), power / 256.0);
 	char buf[10];
 	sprintf(buf, "%d:%02d", position / (1000 * 60), (position / 1000) % 60);
-	gtk_progress_bar_set_text(GTK_PROGRESS_BAR(power_bar), buf);
+	gtk_progress_bar_set_text(GTK_PROGRESS_BAR(power_bar), buf);*/
+
+	int w = scope_area->allocation.width;
+	int h = scope_area->allocation.height;
+	int i;
+	for (i = 0; i < SCOPE_WIDTH; ++i) {
+		scope_points[i].x = i;
+		scope_points[i].y = scope[i * scope_len / SCOPE_WIDTH] * h / 2 / SHRT_MAX + h / 2;
+	}
+	gtk_widget_queue_draw_area(scope_area, 0, 0, w, h);
+
 	GtkAdjustment *adj = gtk_range_get_adjustment(GTK_RANGE(seekbar));
 	gtk_adjustment_set_value(adj, position / 1000.0);
 	unlock_ui();
@@ -630,10 +646,25 @@ static gboolean incoming_client(GIOChannel *io, GIOCondition cond, gpointer ptr)
 	return TRUE;
 }
 
+gboolean expose_event_cb(GtkWidget *widget, GdkEventExpose *event, gpointer ptr)
+{
+	UNUSED(ptr);
+	UNUSED(event);
+
+	int w = widget->allocation.width;
+	int h = widget->allocation.height;
+	gdk_draw_rectangle(widget->window, widget->style->black_gc,
+			   true, 0, 0, w, h);
+	gdk_draw_lines(widget->window, widget->style->white_gc,
+		       scope_points, SCOPE_WIDTH);
+	return true;
+}
+
 int main(int argc, char **argv)
 {
 	g_thread_init(NULL);
 	gdk_threads_init();
+	gdk_threads_enter();
 
 	main_thread = g_thread_self();
 
@@ -726,13 +757,14 @@ int main(int argc, char **argv)
 		gtk_widget_set_tooltip_text(button, buttons[i].help);
 	}
 
-	power_bar = gtk_progress_bar_new();
-	gtk_box_pack_start(GTK_BOX(toolbar), power_bar, false, true, 0);
+	scope_area = gtk_drawing_area_new();
+	gtk_widget_set_size_request(scope_area, SCOPE_WIDTH, -1);
+	gtk_box_pack_start(GTK_BOX(toolbar), scope_area, false, true, 0);
+	g_signal_connect(G_OBJECT(scope_area), "expose_event", G_CALLBACK(expose_event_cb), NULL);
 
 	seekbar = gtk_hscale_new_with_range(0, 1, 1);
 	gtk_range_set_update_policy(GTK_RANGE(seekbar), GTK_UPDATE_DELAYED);
 	g_signal_connect(G_OBJECT(seekbar), "change-value", G_CALLBACK(seek_cb), NULL);
-	gtk_widget_set_size_request(seekbar, 100, -1);
 
 	notebook = gtk_notebook_new();
 
