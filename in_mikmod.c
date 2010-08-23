@@ -59,13 +59,11 @@ static BOOL reader_Read(struct MREADER *mr, void *buf, size_t maxlen)
 {
 	struct input_plugin_ctx *ctx =
 		container_of(mr, struct input_plugin_ctx, mr);
-	ssize_t len = read(ctx->fd, buf, maxlen);
-	if (len < 0) {
-		warning("read failed (%s)\n", strerror(errno));
-		ctx->eof = true;
-		return false;
-	}
-	if ((size_t)len < maxlen) {
+
+	ssize_t len = read_in_full(ctx->fd, buf, maxlen);
+	if (len < 0)
+		linewarning("read failed (%s)\n", strerror(errno));
+	if ((size_t) len != maxlen) {
 		ctx->eof = true;
 		return false;
 	}

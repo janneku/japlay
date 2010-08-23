@@ -8,6 +8,7 @@
 #define UNUSED(x)		(void)(x)
 
 #define error(...)		fprintf(stderr, "ERROR: " __VA_ARGS__)
+#define linewarning(fmt, args...) fprintf(stderr, "WARNING: %s:%d (%s): " fmt, __FILE__, __LINE__, __func__, ## args)
 #define warning(...)		fprintf(stderr, "WARNING: " __VA_ARGS__)
 #define info(...)		do { \
 					if (japlay_debug) \
