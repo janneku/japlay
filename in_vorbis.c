@@ -7,10 +7,13 @@
 #include "utils.h"
 #include "plugin.h"
 #include <vorbis/vorbisfile.h>
+#include <errno.h>
+#include <fcntl.h>
 
 struct input_plugin_ctx {
 	struct input_state *state;
 	OggVorbis_File vf;
+	int fd;
 	bool reliable;
 };
 
@@ -20,17 +23,51 @@ static bool vorbis_detect(const char *filename)
 	return ext && !strcasecmp(ext, "ogg");
 }
 
+static size_t read_cb(void *ptr, size_t size, size_t nmemb, void *datasource)
+{
+	struct input_plugin_ctx *ctx = datasource;
+
+	ssize_t len = read_in_full(ctx->fd, ptr, size * nmemb);
+	if (len < 0) {
+		linewarning("read failed (%s)\n", strerror(errno));
+		return 0;
+	}
+	return len / size;
+}
+
+static int seek_cb(void *datasource, ogg_int64_t off, int whence)
+{
+	struct input_plugin_ctx *ctx = datasource;
+	if (lseek(ctx->fd, off, whence) < 0)
+		return -1;
+	return 0;
+}
+
+static long tell_cb(void *datasource)
+{
+	struct input_plugin_ctx *ctx = datasource;
+	return lseek(ctx->fd, 0, SEEK_CUR);
+}
+
+static ov_callbacks callbacks = {
+	.read_func = read_cb,
+	.seek_func = seek_cb,
+	.tell_func = tell_cb,
+};
+
 static int vorbis_open(struct input_plugin_ctx *ctx, struct input_state *state,
 		       const char *filename)
 {
 	ctx->state = state;
 
-	FILE *f = fopen(filename, "rb");
-	if (!f)
+	ctx->fd = open(filename, O_RDONLY);
+	if (ctx->fd < 0) {
+		warning("unable to open file (%s)\n", strerror(errno));
 		return -1;
+	}
 
-	if (ov_open(f, &ctx->vf, NULL, 0)) {
-		fclose(f);
+	if (ov_open_callbacks(ctx, &ctx->vf, NULL, 0, callbacks)) {
+		close(ctx->fd);
 		return -1;
 	}
 
@@ -42,6 +79,7 @@ static int vorbis_open(struct input_plugin_ctx *ctx, struct input_state *state,
 static void vorbis_close(struct input_plugin_ctx *ctx)
 {
 	ov_clear(&ctx->vf);
+	close(ctx->fd);
 }
 
 static size_t vorbis_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
