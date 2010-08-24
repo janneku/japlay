@@ -7,6 +7,7 @@
 #include "plugin.h"
 #include "playlist.h"
 #include "common.h"
+#include "utils.h"
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -170,62 +171,11 @@ static size_t estimate(struct input_plugin_ctx *ctx, size_t t)
 	return newpos;
 }
 
-static int setblocking(int fd, bool blocking)
-{
-	int flags = fcntl(fd, F_GETFL);
-	flags &= ~O_NONBLOCK;
-	if (!blocking)
-		flags |= O_NONBLOCK;
-	return fcntl(fd, F_SETFL, flags);
-}
-
-static int wait_on_socket(int fd, bool for_recv, int timeout_ms)
-{
-	struct timeval tv = {.tv_sec = timeout_ms / 1000, .tv_usec = (timeout_ms % 1000) * 1000};
-
-	fd_set infd, outfd;
-	FD_ZERO(&infd);
-	FD_ZERO(&outfd);
-	if (for_recv)
-		FD_SET(fd, &infd);
-	else
-		FD_SET(fd, &outfd);
-
-	while (true) {
-		int ret = select(fd + 1, &infd, &outfd, NULL, &tv);
-		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
-			warning("select failed (%s)\n", strerror(errno));
-			return -1;
-		} else if (ret == 0) {
-			warning("connection timeout\n");
-			return -1;
-		}
-		break;
-	}
-	return 0;
-}
-
 static bool mad_detect(const char *filename)
 {
 	const char *ext = file_ext(filename);
 	return !memcmp(filename, "http://", 7) ||
 		(ext && !strcasecmp(ext, "mp3"));
-}
-
-static size_t xread(int fd, void *buf, size_t maxlen)
-{
-	while (true) {
-		ssize_t ret = read(fd, buf, maxlen);
-		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
-			warning("read failed (%s)\n", strerror(errno));
-			ret = 0;
-		}
-		return ret;
-	}
 }
 
 /* fill the read buffer */
@@ -237,9 +187,9 @@ static int fillbuf(struct input_plugin_ctx *ctx)
 			return -1;
 		}
 	}
-	size_t len = xread(ctx->fd, &ctx->buffer[ctx->buflen],
-			   sizeof(ctx->buffer) - ctx->buflen);
-	if (len == 0) {
+	ssize_t len = xread(ctx->fd, &ctx->buffer[ctx->buflen],
+			    sizeof(ctx->buffer) - ctx->buflen);
+	if (len <= 0) {
 		ctx->eof = true;
 		return -1;
 	}
@@ -251,18 +201,6 @@ static void skipbuf(struct input_plugin_ctx *ctx, size_t pos, size_t len)
 {
 	ctx->buflen -= len;
 	memmove(&ctx->buffer[pos], &ctx->buffer[pos + len], ctx->buflen - pos);
-}
-
-static char *trim(char *buf)
-{
-	size_t i = strlen(buf);
-	while (i && isspace(buf[i - 1]))
-		--i;
-	buf[i] = 0;
-	i = 0;
-	while (isspace(buf[i]))
-		++i;
-	return &buf[i];
 }
 
 static int parse_url(struct input_plugin_ctx *ctx, const char *url)
@@ -492,8 +430,8 @@ static int read_meta(struct input_plugin_ctx *ctx)
 	skipbuf(ctx, ctx->metapos, i);
 
 	while (i < metalen) {
-		size_t len = xread(ctx->fd, &meta[i], metalen - i);
-		if (len == 0) {
+		ssize_t len = xread(ctx->fd, &meta[i], metalen - i);
+		if (len <= 0) {
 			ctx->eof = true;
 			return -1;
 		}

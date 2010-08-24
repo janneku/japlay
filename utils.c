@@ -5,12 +5,13 @@
 #define _GNU_SOURCE /* asprintf */
 
 #include "utils.h"
+#include "common.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-#include <stdio.h>
 #include <ctype.h>
+#include <fcntl.h>
 
 char *concat_strings(const char *s, const char *t)
 {
@@ -140,6 +141,53 @@ ssize_t read_in_full(int fd, void *buf, size_t count)
 	}
 
 	return bytes;
+}
+
+ssize_t xread(int fd, void *buf, size_t maxlen)
+{
+	ssize_t ret;
+	while (true) {
+		ret = read(fd, buf, maxlen);
+		if (ret < 0 && errno == EINTR)
+			continue;
+		return ret;
+	}
+}
+
+int setblocking(int fd, bool blocking)
+{
+	int flags = fcntl(fd, F_GETFL);
+	flags &= ~O_NONBLOCK;
+	if (!blocking)
+		flags |= O_NONBLOCK;
+	return fcntl(fd, F_SETFL, flags);
+}
+
+int wait_on_socket(int fd, bool for_recv, int timeout_ms)
+{
+	struct timeval tv = {.tv_sec = timeout_ms / 1000,
+			     .tv_usec = (timeout_ms % 1000) * 1000};
+
+	fd_set infd, outfd;
+	FD_ZERO(&infd);
+	FD_ZERO(&outfd);
+	if (for_recv)
+		FD_SET(fd, &infd);
+	else
+		FD_SET(fd, &outfd);
+
+	while (true) {
+		int ret = select(fd + 1, &infd, &outfd, NULL, &tv);
+		if (ret < 0 && errno == EINTR)
+			continue;
+		if (ret == 0) {
+			/* timeout */
+			errno = EAGAIN;
+			return -1;
+		} else if (ret > 0)
+			return 0;
+		return ret;
+	}
 }
 
 char *trim(char *buf)
