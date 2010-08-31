@@ -58,7 +58,7 @@ static struct playlist_entry *cursor = NULL;
 static bool autovol = false;
 static int volume = 256;
 
-static long toseek = 0;
+static long toseek = -1;
 
 struct playlist *japlay_queue, *japlay_history;
 
@@ -278,9 +278,9 @@ static void *decode_thread_routine(void *arg)
 		else
 			CURSOR_UNLOCK;
 
-		if (toseek) {
+		if (toseek != -1) {
 			struct songpos newpos = {.msecs = toseek,};
-			toseek = 0;
+			toseek = -1;
 			int seekret = ds.plugin->seek(ds.ctx, &newpos);
 			if (seekret < 0) {
 				error("Seek error\n");
