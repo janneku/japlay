@@ -596,6 +596,13 @@ static gboolean key_pressed_cb(GtkWidget *widget, GdkEventKey *key, gpointer dat
 	return FALSE;
 }
 
+static char *format_seek_cb(GtkScale *scale, gdouble value)
+{
+	UNUSED(scale);
+	unsigned int secs = value;
+	return g_strdup_printf("%d:%02d", secs / 60, secs % 60);
+}
+
 static void handle_sigint(int sig)
 {
 	UNUSED(sig);
@@ -765,6 +772,7 @@ int main(int argc, char **argv)
 	seekbar = gtk_hscale_new_with_range(0, 1, 1);
 	gtk_range_set_update_policy(GTK_RANGE(seekbar), GTK_UPDATE_DELAYED);
 	g_signal_connect(G_OBJECT(seekbar), "change-value", G_CALLBACK(seek_cb), NULL);
+	g_signal_connect(G_OBJECT(seekbar), "format-value", G_CALLBACK(format_seek_cb), NULL);
 
 	notebook = gtk_notebook_new();
 
