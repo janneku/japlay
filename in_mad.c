@@ -22,6 +22,8 @@
 #include <assert.h>
 #include <mad.h>
 
+/*#define ACCURATE_SEEK*/
+
 struct input_plugin_ctx {
 	struct input_state *state;
 	struct mad_stream stream;
@@ -47,6 +49,8 @@ struct input_plugin_ctx {
 	/* HTTP stream metadata */
 	size_t metainterval, metapos;
 };
+
+#define FRAME_LEN	1152
 
 #define DEFAULT_BYTE_RATE (128000 / 8)
 #define MAX_SECS (365 * 24 * 3600)     /* a year :-) */
@@ -529,12 +533,70 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 
 static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 {
+#ifdef ACCURATE_SEEK
+	unsigned int cur_pos = japlay_get_position(ctx->state);
+
+	if (newpos->msecs < cur_pos) {
+		/* rewind to the beginning */
+		mad_frame_mute(&ctx->frame);
+		mad_synth_mute(&ctx->synth);
+		mad_stream_finish(&ctx->stream);
+		mad_stream_init(&ctx->stream);
+		cur_pos = 0;
+
+		if (ctx->streaming) {
+			close(ctx->fd);
+			if (connect_http(ctx, 0))
+				return -1;
+		} else {
+			lseek(ctx->fd, 0, SEEK_SET);
+			ctx->buflen = 0;
+		}
+	}
+
+	unsigned int pos_cnt = 0;
+
+	/* walk MPEG frames */
+	while (cur_pos < newpos->msecs) {
+		/* remove decoded data from the read buffer */
+		if (ctx->stream.next_frame) {
+			size_t len = ctx->stream.next_frame - ctx->buffer;
+			ctx->fpos += len;
+			ctx->metapos -= len;
+			skipbuf(ctx, 0, len);
+		}
+		mad_stream_buffer(&ctx->stream, ctx->buffer, ctx->buflen);
+
+		if (mad_header_decode(&ctx->frame.header, &ctx->stream)) {
+			if (ctx->stream.error == MAD_ERROR_BUFLEN) {
+				/* not enought data the in read buffer */
+				if (ctx->eof) {
+					set_song_length(get_input_song(ctx->state),
+						cur_pos, ctx->reliable ? 100 : 10);
+					return -1;
+				}
+				if (fillbuf(ctx))
+					return -1;
+			} else
+				print_mad_error(&ctx->stream);
+			continue;
+		}
+
+		pos_cnt += FRAME_LEN;
+		unsigned int samplerate = ctx->frame.header.samplerate *
+					MAD_NCHANNELS(&ctx->frame.header);
+		unsigned int adv = pos_cnt * 1000 / samplerate;
+		cur_pos += adv;
+		pos_cnt -= adv * samplerate / 1000;
+	}
+	newpos->msecs = cur_pos;
+#else
 	size_t offs;
 	size_t curt;
 	size_t t = newpos->msecs / 1000;
 
 	if (ctx->length == (size_t) -1)
-		return -1;
+		return 0;
 
 	curt = japlay_get_position(ctx->state) / 1000;
 	if (t == curt)
@@ -548,8 +610,10 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 		close(ctx->fd);
 		if (connect_http(ctx, offs))
 			return -1;
-	} else
+	} else {
 		lseek(ctx->fd, offs, SEEK_SET);
+		ctx->buflen = 0;
+	}
 	ctx->fpos = offs;
 
 	newpos->msecs = 1000 * t;
@@ -560,6 +624,7 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	mad_stream_init(&ctx->stream);
 
 	ctx->reliable = false;
+#endif
 
 	return 1;
 }
