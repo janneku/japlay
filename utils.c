@@ -213,7 +213,7 @@ char *strdup(const char *str)
 
 int strcasecmp(const char *a, const char *b)
 {
-	while (*a && *b) {
+	while (*a || *b) {
 		if (tolower(*a) != tolower(*b))
 			return *b - *a;
 		a++;
