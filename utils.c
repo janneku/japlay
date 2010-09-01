@@ -225,3 +225,21 @@ int strcasecmp(const char *a, const char *b)
 	}
 	return 0;
 }
+
+#ifdef TEST
+
+int main(void)
+{
+	char buf[16];
+	strcpy(buf, "  test a ");
+	trim(buf);
+	assert(strcmp(buf, "test a") == 0);
+
+	assert(strcmp(file_ext("/test/foo.bar", "bar") == 0);
+
+	assert(file_ext("test/foo") == NULL);
+
+	return 0;
+}
+
+#endif
