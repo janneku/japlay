@@ -190,16 +190,20 @@ int wait_on_socket(int fd, bool for_recv, int timeout_ms)
 	}
 }
 
-char *trim(char *buf)
+/*
+ * Strip leading and trailing spaces from the string. The operation is done
+ * in place.
+ */
+void trim(char *buf)
 {
-	size_t i = strlen(buf);
-	while (i && isspace(buf[i - 1]))
-		--i;
-	buf[i] = 0;
-	i = 0;
-	while (isspace(buf[i]))
-		++i;
-	return &buf[i];
+	char *p = buf;
+	while (isspace(*p))
+		++p;
+	char *end = &p[strlen(p)];
+	while (end > p && isspace(p[-1]))
+		--end;
+	*end = 0;
+	memmove(buf, p, end + 1 - p);
 }
 
 char *strdup(const char *str)

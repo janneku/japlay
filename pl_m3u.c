@@ -32,7 +32,8 @@ static int m3u_load(struct playlist *playlist, const char *filename)
 		const char extinf[] = "#EXTINF:";
 
 		if (row[0] != '#') {
-			char *fname = build_filename(filename, trim(row));
+			trim(row);
+			char *fname = build_filename(filename, row);
 			if (fname == NULL)
 				continue;
 			struct playlist_entry *entry =
@@ -60,8 +61,9 @@ static int m3u_load(struct playlist *playlist, const char *filename)
 			if (isdigit(*len))
 				length = atoi(len);
 			if (comma) {
+				trim(comma);
 				free(title);
-				title = strdup(trim(comma));
+				title = strdup(comma);
 			}
 		}
 	}

@@ -313,7 +313,8 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 				goto err;
 		}
 		*newline = 0;
-		char *line = trim((char *) ctx->buffer);
+		char *line = (char *) ctx->buffer;
+		trim(line);
 
 		info("HTTP: %s\n", line);
 
@@ -323,15 +324,18 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 		const char metaint[] = "icy-metaint:";
 
 		if (!strncasecmp(line, contype, strlen(contype))) {
-			char *value = trim(&line[strlen(contype)]);
-			if (strcmp(value, "audio/mpeg")) {
-				warning("invalid content type: %s\n", value);
+			char *type = &line[strlen(contype)];
+			trim(type);
+			if (strcmp(type, "audio/mpeg")) {
+				warning("invalid content type: %s\n", type);
 				goto err;
 			}
 		} else if (!strncasecmp(line, conlen, strlen(conlen)) && offset == 0) {
 			ctx->length = atol(&line[strlen(conlen)]);
 		} else if (!strncasecmp(line, title, strlen(title))) {
-			set_song_title(get_input_song(ctx->state), trim(&line[strlen(title)]));
+			char *title = &line[strlen(title)];
+			trim(title);
+			set_song_title(get_input_song(ctx->state), title);
 		} else if (!strncasecmp(line, metaint, strlen(metaint))) {
 			ctx->metainterval = atol(&line[strlen(metaint)]);
 		} else if (*line == 0)

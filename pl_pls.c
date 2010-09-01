@@ -30,8 +30,10 @@ static int pls_load(struct playlist *playlist, const char *filename)
 			continue;
 		*value = 0;
 		value++;
-		if (!memcmp(trim(row), "File", 4)) {
-			char *fname = build_filename(filename, trim(value));
+		trim(row);
+		if (!memcmp(row, "File", 4)) {
+			trim(value);
+			char *fname = build_filename(filename, value);
 			if (fname) {
 				struct playlist_entry *entry
 					= add_file_playlist(playlist, fname);

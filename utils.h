@@ -21,7 +21,7 @@ ssize_t read_in_full(int fd, void *buf, size_t count);
 ssize_t xread(int fd, void *buf, size_t maxlen);
 int setblocking(int fd, bool blocking);
 int wait_on_socket(int fd, bool for_recv, int timeout_ms);
-char *trim(char *buf);
+void trim(char *buf);
 char *strdup(const char *str);
 int strcasecmp(const char *a, const char *b);
 
