@@ -15,7 +15,7 @@ int get_song_info(struct song *song);
 
 struct playlist_entry *add_file_playlist(struct playlist *playlist,
 					 const char *filename);
-int add_dir_playlist(struct playlist *playlist, const char *directory);
+int add_dir_or_file_playlist(struct playlist *playlist, const char *path);
 
 int load_playlist(struct playlist *playlist, const char *filename);
 

@@ -400,7 +400,7 @@ static void add_dir_cb(GtkMenuItem *menuitem, gpointer ptr)
 
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
 		char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-		add_dir_playlist(page->playlist, filename);
+		add_dir_or_file_playlist(page->playlist, filename);
 		g_free(filename);
 	}
 	gtk_widget_destroy(dialog);
