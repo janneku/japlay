@@ -35,6 +35,10 @@ struct entry_ui_ctx {
 
 struct playlist_ui_ctx {
 	GtkListStore *store;
+};
+
+struct playlist_page {
+	struct playlist *playlist;
 	GtkWidget *view;
 	GtkWidget *page;
 };
@@ -49,7 +53,7 @@ static GtkWidget *scope_area;
 static GtkWidget *seekbar;
 static GtkWidget *notebook;
 static GThread *main_thread;
-static struct playlist *pages[64] = {NULL,};
+static struct playlist_page *pages[64] = {NULL,};
 static struct playlist *main_playlist;
 static GdkPoint scope_points[SCOPE_WIDTH];
 
@@ -154,39 +158,50 @@ void ui_remove_entry(struct playlist *playlist, struct playlist_entry *entry)
 static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
 	GtkTreeViewColumn *col, gpointer ptr);
 
-void ui_show_playlist(struct playlist *playlist)
+static int add_playlist_page(struct playlist *playlist, const char *title)
+{
+	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
+
+	struct playlist_page *page = NEW(struct playlist_page);
+	if (page == NULL)
+		return -1;
+	page->playlist = playlist;
+
+	page->view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(ctx->store));
+	gtk_tree_selection_set_mode(
+		gtk_tree_view_get_selection(GTK_TREE_VIEW(page->view)),
+		GTK_SELECTION_MULTIPLE);
+	g_signal_connect(G_OBJECT(page->view), "row-activated", G_CALLBACK(playlist_clicked), NULL);
+
+	GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(page->view),
+		-1, "Name", renderer, "text", COL_NAME,
+		"foreground", COL_COLOR, NULL);
+
+	renderer = gtk_cell_renderer_text_new();
+	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(page->view),
+		-1, "Length", renderer, "text", COL_LENGTH,
+		"foreground", COL_COLOR, NULL);
+
+	page->page = gtk_scrolled_window_new(NULL, NULL);
+	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(page->page),
+		GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+	gtk_container_add(GTK_CONTAINER(page->page), page->view);
+
+	gtk_widget_show_all(page->page);
+
+	int idx = gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page->page,
+					   gtk_label_new(title));
+	pages[idx] = page;
+	return idx;
+}
+
+void ui_init_playlist(struct playlist *playlist)
 {
 	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
 
 	ctx->store = gtk_list_store_new(NUM_COLS, G_TYPE_POINTER,
 		G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
-
-	ctx->view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(ctx->store));
-	gtk_tree_selection_set_mode(
-		gtk_tree_view_get_selection(GTK_TREE_VIEW(ctx->view)),
-		GTK_SELECTION_MULTIPLE);
-	g_signal_connect(G_OBJECT(ctx->view), "row-activated", G_CALLBACK(playlist_clicked), NULL);
-
-	GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(ctx->view),
-		-1, "Name", renderer, "text", COL_NAME,
-		"foreground", COL_COLOR, NULL);
-
-	renderer = gtk_cell_renderer_text_new();
-	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(ctx->view),
-		-1, "Length", renderer, "text", COL_LENGTH,
-		"foreground", COL_COLOR, NULL);
-
-	ctx->page = gtk_scrolled_window_new(NULL, NULL);
-	gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(ctx->page),
-		GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-	gtk_container_add(GTK_CONTAINER(ctx->page), ctx->view);
-
-	gtk_widget_show_all(ctx->page);
-
-	int idx = gtk_notebook_append_page(GTK_NOTEBOOK(notebook), ctx->page,
-		gtk_label_new(get_playlist_name(playlist)));
-	pages[idx] = playlist;
 }
 
 void ui_update_entry(struct playlist *playlist, struct playlist_entry *entry)
@@ -313,7 +328,7 @@ void ui_show_message(const char *fmt, ...)
 	unlock_ui();
 }
 
-static struct playlist *page_playlist(void)
+static struct playlist_page *page_playlist(void)
 {
 	int idx = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
 	return pages[idx];
@@ -321,13 +336,13 @@ static struct playlist *page_playlist(void)
 
 static void add_one_file(char *filename, gpointer ptr)
 {
-	struct playlist *playlist = page_playlist();
+	struct playlist_page *page = page_playlist();
 
 	UNUSED(ptr);
 	/* first try to load as a playlist */
-	if (load_playlist(playlist, filename)) {
+	if (load_playlist(page->playlist, filename)) {
 		struct playlist_entry *entry =
-			add_file_playlist(playlist, filename);
+			add_file_playlist(page->playlist, filename);
 		if (entry)
 			put_entry(entry);
 	}
@@ -337,13 +352,13 @@ static void add_one_file(char *filename, gpointer ptr)
 static void add_cb(GtkButton *button, gpointer ptr)
 {
 	GtkWidget *dialog;
-	struct playlist *playlist;
 
 	UNUSED(button);
 	UNUSED(ptr);
 
-	playlist = page_playlist();
-	if (playlist == japlay_queue || playlist == japlay_history) {
+	struct playlist_page *page = page_playlist();
+	if (page->playlist == japlay_queue ||
+	    page->playlist == japlay_history) {
 		ui_error("Can not add files to this playlist.\n\nPlease select a main or a custom playlist.\n");
 		return;
 	}
@@ -366,13 +381,13 @@ static void add_cb(GtkButton *button, gpointer ptr)
 static void add_dir_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
 	GtkWidget *dialog;
-	struct playlist *playlist;
 
 	UNUSED(menuitem);
 	UNUSED(ptr);
 
-	playlist = page_playlist();
-	if (playlist == japlay_queue || playlist == japlay_history) {
+	struct playlist_page *page = page_playlist();
+	if (page->playlist == japlay_queue ||
+	    page->playlist == japlay_history) {
 		ui_error("Can not add files to this playlist.\n\nPlease select a main or a custom playlist.\n");
 		return;
 	}
@@ -385,7 +400,7 @@ static void add_dir_cb(GtkMenuItem *menuitem, gpointer ptr)
 
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
 		char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-		add_dir_playlist(playlist, filename);
+		add_dir_playlist(page->playlist, filename);
 		g_free(filename);
 	}
 	gtk_widget_destroy(dialog);
@@ -395,14 +410,15 @@ static void new_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
 	UNUSED(menuitem);
 	UNUSED(ptr);
-	new_playlist("Extra playlist");
+	struct playlist *playlist = new_playlist();
+	add_playlist_page(playlist, "Extra playlist");
 }
 
 static void clear_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
 {
 	UNUSED(menuitem);
 	UNUSED(ptr);
-	clear_playlist(page_playlist());
+	clear_playlist(page_playlist()->playlist);
 }
 
 static void enable_shuffle_cb(GtkCheckMenuItem *menuitem, gpointer ptr)
@@ -432,8 +448,8 @@ static void scan_playlist_cb(GtkMenuItem *menuitem, gpointer ptr)
 
 static void append_rr_list(GtkTreePath *path, GList **rowref_list)
 {
-	struct playlist *playlist = page_playlist();
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
+	struct playlist_page *page = page_playlist();
+	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	GtkTreeRowReference *rowref = gtk_tree_row_reference_new(
 		GTK_TREE_MODEL(ctx->store), path);
@@ -459,8 +475,8 @@ static struct playlist_entry *entry_from_store(GtkListStore *store, GtkTreePath 
 static void enqueue_one_file(GtkTreeModel *model, GtkTreePath *path,
 			     GtkTreeIter *iter, gpointer ptr)
 {
-	struct playlist *playlist = page_playlist();
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
+	struct playlist_page *page = page_playlist();
+	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	UNUSED(model);
 	UNUSED(iter);
@@ -473,20 +489,20 @@ static void enqueue_one_file(GtkTreeModel *model, GtkTreePath *path,
 
 static void enqueue_cb(GtkButton *button, gpointer ptr)
 {
-	struct playlist *playlist = page_playlist();
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
+	struct playlist_page *page = page_playlist();
+	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	UNUSED(button);
 	UNUSED(ptr);
 	gtk_tree_selection_selected_foreach(
-		gtk_tree_view_get_selection(GTK_TREE_VIEW(ctx->view)),
+		gtk_tree_view_get_selection(GTK_TREE_VIEW(page->view)),
 		enqueue_one_file, NULL);
 }
 
 static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
 {
-	struct playlist *playlist = page_playlist();
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
+	struct playlist_page *page = page_playlist();
+	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	UNUSED(ptr);
 	GtkTreePath *path = gtk_tree_row_reference_get_path(rowref);
@@ -495,18 +511,18 @@ static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
 	struct playlist_entry *entry = entry_from_store(ctx->store, path);
 	gtk_tree_path_free(path);
 
-	remove_playlist(playlist, entry);
+	remove_playlist(page->playlist, entry);
 }
 
 static void remove_cb(GtkButton *button, gpointer ptr)
 {
-	struct playlist *playlist = page_playlist();
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
+	struct playlist_page *page = page_playlist();
+	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	UNUSED(button);
 	UNUSED(ptr);
 	GList *selected = gtk_tree_selection_get_selected_rows(
-		gtk_tree_view_get_selection(GTK_TREE_VIEW(ctx->view)), NULL);
+		gtk_tree_view_get_selection(GTK_TREE_VIEW(page->view)), NULL);
 	GList *rr_list = NULL;
 	g_list_foreach(selected, (GFunc)append_rr_list, &rr_list);
 	g_list_free(selected);
@@ -545,10 +561,10 @@ static void stop_cb(GtkButton *button, gpointer ptr)
 static void playlist_clicked(GtkTreeView *view, GtkTreePath *path,
 	GtkTreeViewColumn *col, gpointer ptr)
 {
-	struct playlist *playlist = page_playlist();
-	if (playlist == japlay_queue)
+	struct playlist_page *page = page_playlist();
+	if (page->playlist == japlay_queue)
 		return;
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(playlist);
+	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	UNUSED(view);
 	UNUSED(col);
@@ -669,12 +685,6 @@ gboolean expose_event_cb(GtkWidget *widget, GdkEventExpose *event, gpointer ptr)
 
 int main(int argc, char **argv)
 {
-	g_thread_init(NULL);
-	gdk_threads_init();
-	gdk_threads_enter();
-
-	main_thread = g_thread_self();
-
 	int fd = unix_socket_connect(SOCKET_NAME);
 	if (fd >= 0) {
 		int i;
@@ -689,7 +699,17 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	g_thread_init(NULL);
+	gdk_threads_init();
+	gdk_threads_enter();
 	gtk_init(&argc, &argv);
+
+	main_thread = g_thread_self();
+
+	if (japlay_init(&argc, argv)) {
+		error("Can not initialize japlay\n");
+		return -1;
+	}
 
 	main_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_title(GTK_WINDOW(main_window), APP_NAME);
@@ -786,13 +806,12 @@ int main(int argc, char **argv)
 	gtk_widget_set_size_request(vbox, 350, 400);
 	gtk_widget_show_all(main_window);
 
-	if (japlay_init(&argc, argv)) {
-		error("Can not initialize japlay\n");
-		return -1;
-	}
-
 	/* TODO: load all playlists */
-	main_playlist = new_playlist("Main");
+	main_playlist = new_playlist();
+
+	add_playlist_page(main_playlist, "Main");
+	add_playlist_page(japlay_queue, "Play queue");
+	add_playlist_page(japlay_history, "History");
 
 	char *playlistpath = get_config_name("main_playlist.m3u");
 	if (playlistpath)

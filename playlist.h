@@ -14,13 +14,12 @@ struct song *get_entry_song(struct playlist_entry *entry);
 struct entry_ui_ctx *get_entry_ui_ctx(struct playlist_entry *entry);
 struct playlist_ui_ctx *get_playlist_ui_ctx(struct playlist *playlist);
 const char *get_song_filename(struct song *song);
-const char *get_playlist_name(struct playlist *playlist);
 char *get_song_title(struct song *song);
 unsigned int get_song_length(struct song *song);
 
 void set_playlist_shuffle(struct playlist *playlist, bool enabled);
 struct song *find_song(const char *filename);
-struct playlist *new_playlist(const char *name);
+struct playlist *new_playlist(void);
 struct song *new_song(const char *filename);
 void get_song(struct song *song);
 void put_song(struct song *song);

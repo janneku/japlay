@@ -49,7 +49,6 @@ struct playlist_entry {
 struct playlist {
 	struct list_head entries;
 	pthread_mutex_t mutex;
-	const char *name;
 	unsigned int len;
 	struct playlist_ui_ctx *ui_ctx;
 	bool shuffle;
@@ -84,11 +83,6 @@ char *get_song_title(struct song *song)
 	return NULL;
 }
 
-const char *get_playlist_name(struct playlist *playlist)
-{
-	return playlist->name;
-}
-
 unsigned int get_song_length(struct song *song)
 {
 	return song->length;
@@ -117,16 +111,15 @@ struct song *find_song(const char *filename)
 	return song;
 }
 
-struct playlist *new_playlist(const char *name)
+struct playlist *new_playlist(void)
 {
 	struct playlist *playlist = NEW(struct playlist);
 	if (playlist == NULL)
 		return NULL;
 	pthread_mutex_init(&playlist->mutex, NULL);
-	playlist->name = strdup(name);
 	playlist->ui_ctx = calloc(1, ui_playlist_ctx_size);
 	list_init(&playlist->entries);
-	ui_show_playlist(playlist);
+	ui_init_playlist(playlist);
 	return playlist;
 }
 

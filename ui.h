@@ -19,7 +19,7 @@ void ui_add_entry(struct playlist *playlist, struct playlist_entry *after,
 		  struct playlist_entry *entry);
 void ui_error(const char *fmt, ...);
 void ui_remove_entry(struct playlist *playlist, struct playlist_entry *entry);
-void ui_show_playlist(struct playlist *playlist);
+void ui_init_playlist(struct playlist *playlist);
 void ui_hide_playlist(struct playlist *playlist);
 void ui_update_entry(struct playlist *playlist, struct playlist_entry *entry);
 void ui_set_cursor(struct playlist_entry *entry);

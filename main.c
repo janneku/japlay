@@ -716,8 +716,8 @@ int japlay_init(int *argc, char **argv)
 	pthread_create(&play_thread, NULL, play_thread_routine, NULL);
 	pthread_create(&scan_thread, NULL, scan_thread_routine, NULL);
 
-	japlay_queue = new_playlist("Play queue");
-	japlay_history = new_playlist("History");
+	japlay_queue = new_playlist();
+	japlay_history = new_playlist();
 
 	return 0;
 }
