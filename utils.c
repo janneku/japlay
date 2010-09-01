@@ -200,7 +200,7 @@ void trim(char *buf)
 	while (isspace(*p))
 		++p;
 	char *end = &p[strlen(p)];
-	while (end > p && isspace(p[-1]))
+	while (end > p && isspace(end[-1]))
 		--end;
 	*end = 0;
 	memmove(buf, p, end + 1 - p);
