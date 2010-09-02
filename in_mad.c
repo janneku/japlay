@@ -299,8 +299,7 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 	free(req);
 
 	/* parse HTTP reponse */
-	bool done = false;
-	while (!done) {
+	while (true) {
 		/* try to read one line */
 		unsigned char *newline;
 		while (true) {
@@ -318,28 +317,36 @@ static int connect_http(struct input_plugin_ctx *ctx, size_t offset)
 
 		info("HTTP: %s\n", line);
 
-		const char contype[] = "content-type:";
-		const char conlen[] = "content-length:";
-		const char title[] = "icy-name:";
-		const char metaint[] = "icy-metaint:";
+		if (*line == 0) {
+			/* empty line */
+			skipbuf(ctx, 0, newline - ctx->buffer + 1);
+			break;
+		}
 
-		if (!strncasecmp(line, contype, strlen(contype))) {
-			char *type = &line[strlen(contype)];
-			trim(type);
-			if (strcmp(type, "audio/mpeg")) {
-				warning("invalid content type: %s\n", type);
+		char *value = strchr(line, ':');
+		if (value == NULL) {
+			skipbuf(ctx, 0, newline - ctx->buffer + 1);
+			continue;
+		}
+		*value = 0;
+		value++;
+		trim(value);
+
+		if (!strcasecmp(line, "content-type")) {
+			if (strcmp(value, "audio/mpeg")) {
+				warning("invalid content type: %s\n", value);
 				goto err;
 			}
-		} else if (!strncasecmp(line, conlen, strlen(conlen)) && offset == 0) {
-			ctx->length = atol(&line[strlen(conlen)]);
-		} else if (!strncasecmp(line, title, strlen(title))) {
-			char *title = &line[strlen(title)];
-			trim(title);
-			set_song_title(get_input_song(ctx->state), title);
-		} else if (!strncasecmp(line, metaint, strlen(metaint))) {
-			ctx->metainterval = atol(&line[strlen(metaint)]);
-		} else if (*line == 0)
-			done = true;
+
+		} else if (!strcasecmp(line, "content-length") && offset == 0) {
+			ctx->length = atol(value);
+
+		} else if (!strcasecmp(line, "icy-name")) {
+			set_song_title(get_input_song(ctx->state), value);
+
+		} else if (!strcasecmp(line, "icy-metaint")) {
+			ctx->metainterval = atol(value);
+		}
 
 		skipbuf(ctx, 0, newline - ctx->buffer + 1);
 	}
