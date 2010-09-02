@@ -267,7 +267,7 @@ static void *decode_thread_routine(void *arg)
 			}
 
 			if (init_input(&ds, song)) {
-				char *msg = concat_strings("No plugin for file ",
+				char *msg = concat_strings("Unable to play file ",
 					get_song_filename(song));
 				if (msg) {
 					ui_show_message(msg);
