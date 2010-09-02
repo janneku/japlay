@@ -5,13 +5,13 @@
 void init_buffer(struct audio_buffer *buf)
 {
 	memset(buf, 0, sizeof(*buf));
-	buf->formatchg = (size_t) -1;
+	buf->event = (size_t) -1;
 	buf->wrap = (size_t) -1;
 }
 
-bool check_buffer_formatchg(struct audio_buffer *buf)
+bool check_buffer_event(struct audio_buffer *buf)
 {
-	return (buf->tail == buf->formatchg);
+	return (buf->tail == buf->event);
 }
 
 size_t buffer_read_avail(struct audio_buffer *buf)
@@ -25,8 +25,8 @@ size_t buffer_read_avail(struct audio_buffer *buf)
 	size_t end = buf->wrap;
 	if (buf->head < end && buf->head >= buf->tail)
 		end = buf->head;
-	if (buf->formatchg < end && buf->formatchg >= buf->tail)
-		end = buf->formatchg;
+	if (buf->event < end && buf->event >= buf->tail)
+		end = buf->event;
 
 	return end - buf->tail;
 }
@@ -61,8 +61,8 @@ sample_t *write_buffer(struct audio_buffer *buf)
 
 void buffer_processed(struct audio_buffer *buf, size_t len)
 {
-	if (buf->tail == buf->formatchg)
-		buf->formatchg = (size_t) -1;
+	if (buf->tail == buf->event)
+		buf->event = (size_t) -1;
 	buf->tail += len;
 }
 
@@ -71,7 +71,7 @@ void buffer_written(struct audio_buffer *buf, size_t len)
 	buf->head += len;
 }
 
-void mark_buffer_formatchg(struct audio_buffer *buf)
+void mark_buffer_event(struct audio_buffer *buf)
 {
-	buf->formatchg = buf->head;
+	buf->event = buf->head;
 }

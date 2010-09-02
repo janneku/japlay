@@ -58,7 +58,7 @@ static struct playlist_entry *cursor = NULL;
 static bool autovol = false;
 static int volume = 256;
 
-static long toseek = -1;
+static unsigned int toseek = -1;
 
 struct playlist *japlay_queue, *japlay_history;
 
@@ -89,10 +89,13 @@ struct input_state {
 	struct input_plugin *plugin;
 	struct input_plugin_ctx *ctx;
 	struct input_format format; /* current audio format */
-	unsigned int position; /* decode position in milliseconds */
+	/* decode position in milliseconds */
+	unsigned int position;
 	unsigned int pos_cnt;
-	unsigned int playposition; /* playback position in milliseconds */
+	/* playback position in milliseconds */
+	unsigned int playposition;
 	unsigned int playpos_cnt;
+	unsigned int toseek;
 };
 
 static struct input_state ds;
@@ -182,6 +185,7 @@ int get_song_info(struct song *song)
 static int init_input(struct input_state *ds, struct song *song)
 {
 	memset(ds, 0, sizeof(*ds));
+	ds->toseek = -1;
 
 	const char *filename = get_song_filename(song);
 
@@ -278,7 +282,7 @@ static void *decode_thread_routine(void *arg)
 		else
 			CURSOR_UNLOCK;
 
-		if (toseek != -1) {
+		if (toseek != (unsigned int) -1) {
 			struct songpos newpos = {.msecs = toseek,};
 			toseek = -1;
 			int seekret = ds.plugin->seek(ds.ctx, &newpos);
@@ -290,9 +294,9 @@ static void *decode_thread_routine(void *arg)
 			} else {
 				info("Seeking to %ld.%.1lds\n", newpos.msecs / 1000, (newpos.msecs % 1000) / 100);
 				ds.position = newpos.msecs;
-				ds.playposition = newpos.msecs;
 				ds.pos_cnt = 0;
-				ds.playpos_cnt = 0;
+				ds.toseek = newpos.msecs;
+				mark_buffer_event(&play_buffer);
 			}
 			/* FIXME: clear audio buffer
 			PLAY_LOCK;
@@ -315,7 +319,7 @@ static void *decode_thread_routine(void *arg)
 			info("Detected format change\n");
 			ds.pos_cnt = 0;
 			ds.format = format;
-			mark_buffer_formatchg(&play_buffer);
+			mark_buffer_event(&play_buffer);
 		}
 
 		PLAY_LOCK;
@@ -325,7 +329,6 @@ static void *decode_thread_routine(void *arg)
 		ds.pos_cnt += filled;
 
 		/* advance song position with full milliseconds from pos_cnt */
-		/* FIXME: locking */
 		unsigned int samplerate = ds.format.rate * ds.format.channels;
 		unsigned int adv = ds.pos_cnt * 1000 / samplerate;
 		ds.position += adv;
@@ -352,7 +355,7 @@ static void *play_thread_routine(void *arg)
 
 		PLAY_LOCK;
 		avail = buffer_read_avail(&play_buffer);
-		if (avail == 0 && !check_buffer_formatchg(&play_buffer)) {
+		if (avail == 0 && !check_buffer_event(&play_buffer)) {
 			/* buffer is empty, sleep */
 			pthread_cond_wait(&play_cond, &play_mutex);
 			PLAY_UNLOCK;
@@ -360,9 +363,16 @@ static void *play_thread_routine(void *arg)
 		}
 		PLAY_UNLOCK;
 
-		bool formatchg = check_buffer_formatchg(&play_buffer) &&
-				(ds.format.rate != (unsigned int) format.rate ||
-				 ds.format.channels != (unsigned int) format.channels);
+		if (ds.toseek != (unsigned int) -1) {
+			info("playback seek\n");
+			ds.playposition = ds.toseek;
+			ds.toseek = -1;
+			ds.playpos_cnt = 0;
+		}
+
+		bool formatchg =
+			ds.format.rate != (unsigned int) format.rate ||
+			ds.format.channels != (unsigned int) format.channels;
 		if (formatchg || !dev) {
 			/* format changed detected or device is not open */
 			if (dev)
@@ -412,7 +422,6 @@ static void *play_thread_routine(void *arg)
 		ds.playpos_cnt += avail;
 
 		/* advance song position with full milliseconds from pos_cnt */
-		/* FIXME: locking */
 		unsigned int adv = ds.playpos_cnt * 1000 / samplerate;
 		ds.playposition += adv;
 		ds.playpos_cnt -= adv * samplerate / 1000;
@@ -423,7 +432,7 @@ static void *play_thread_routine(void *arg)
 			power = power * 64 / power_cnt;
 
 			/* Automatic volume adjust */
-			int zone = TARGET_POWER / 3;
+			unsigned int zone = TARGET_POWER / 3;
 			if (autovol && (power < TARGET_POWER-zone || power > TARGET_POWER+zone)) {
 				volume += (TARGET_POWER - (int)power) / zone;
 				info("autovol %d%%\n", volume * 100 / 256);
