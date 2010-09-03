@@ -32,9 +32,13 @@ struct input_plugin_ctx {
 	int fd;
 	bool eof;
 	size_t fpos, length;
+	bool reliable;
+	bool streaming;
+
+	/* seeking */
 	size_t *seconds;
 	size_t nseconds;
-	bool reliable, streaming;
+	unsigned int lastslot;
 
 	/* read buffer */
 	unsigned char buffer[8192];
@@ -55,7 +59,7 @@ struct input_plugin_ctx {
 #define DEFAULT_BYTE_RATE (128000 / 8)
 #define MAX_SECS (365 * 24 * 3600)     /* a year :-) */
 
-static void remember(struct input_plugin_ctx *ctx, size_t fpos, size_t t)
+static void remember(struct input_plugin_ctx *ctx, size_t fpos, unsigned int t)
 {
 	size_t *seconds;
 	size_t nseconds;
@@ -75,15 +79,14 @@ static void remember(struct input_plugin_ctx *ctx, size_t fpos, size_t t)
 		ctx->nseconds = nseconds;
 	}
 
-	if (t == 0 || ctx->seconds[t])
-		return;
+	info("remember: %d:%02d at %zd\n", t / 60, t % 60, fpos);
 
 	ctx->seconds[t] = fpos;
 }
 
-static size_t recall(struct input_plugin_ctx *ctx, size_t t)
+static size_t recall(struct input_plugin_ctx *ctx, unsigned int t)
 {
-	if (t < ctx->nseconds && ctx->seconds[t])
+	if (t < ctx->nseconds)
 		return ctx->seconds[t];
 	return 0;
 }
@@ -124,13 +127,6 @@ static size_t estimate(struct input_plugin_ctx *ctx, size_t t)
 	size_t hi_t = 0;
 	size_t newpos;
 	size_t avg;
-
-	if (t == 0)
-		return 0;
-
-	newpos = recall(ctx, t);
-	if (newpos > 0)
-		return newpos;
 
 	if (t < ctx->nseconds) {
 		/* Find previous non-zero offset */
@@ -512,6 +508,13 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 			continue;
 		}
 
+		if (ctx->reliable) {
+			t = japlay_get_position(ctx->state) / 1000;
+			if (t != ctx->lastslot)
+				remember(ctx, ctx->fpos, t);
+			ctx->lastslot = t;
+		}
+
 		format->rate = ctx->frame.header.samplerate;
 		format->channels = MAD_NCHANNELS(&ctx->frame.header);
 
@@ -535,9 +538,6 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 				buffer[i] = scale(ctx->synth.pcm.samples[0][i]);
 		}
 
-		t = japlay_get_position(ctx->state) / 1000;
-		if (!recall(ctx, t))
-			remember(ctx, ctx->fpos, t);
 		return len;
 	}
 }
@@ -602,20 +602,23 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	}
 	newpos->msecs = cur_pos;
 #else
-	size_t offs;
-	size_t curt;
-	size_t t = newpos->msecs / 1000;
+	size_t offs = 0;
+	unsigned int t = newpos->msecs / 1000;
 
 	if (ctx->length == (size_t) -1)
 		return 0;
 
-	curt = japlay_get_position(ctx->state) / 1000;
-	if (t == curt)
-		return 1;
-
-	offs = recall(ctx, t);
-	if (!offs)
-		offs = estimate(ctx, t);
+	if (t == 0)
+		ctx->reliable = true;
+	else {
+		offs = recall(ctx, t);
+		if (offs)
+			ctx->reliable = true;
+		else {
+			offs = estimate(ctx, t);
+			ctx->reliable = false;
+		}
+	}
 
 	if (ctx->streaming) {
 		close(ctx->fd);
@@ -627,14 +630,13 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	}
 	ctx->fpos = offs;
 
+	ctx->lastslot = t;
 	newpos->msecs = 1000 * t;
 
 	mad_frame_mute(&ctx->frame);
 	mad_synth_mute(&ctx->synth);
 	mad_stream_finish(&ctx->stream);
 	mad_stream_init(&ctx->stream);
-
-	ctx->reliable = false;
 #endif
 
 	return 1;
