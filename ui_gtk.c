@@ -8,6 +8,7 @@
 #include "playlist.h"
 #include "utils.h"
 #include "unixsocket.h"
+#include "settings.h"
 
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
@@ -369,8 +370,18 @@ static void add_cb(GtkButton *button, gpointer ptr)
 		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
 		NULL);
 	gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), true);
+	const char *path = get_setting("file_chooser_path");
+	if (path) {
+		gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dialog),
+						    path);
+	}
 
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+		char *path = gtk_file_chooser_get_current_folder(GTK_FILE_CHOOSER(dialog));
+		if (path) {
+			set_setting("file_chooser_path", path);
+			free(path);
+		}
 		GSList *filelist = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog));
 		g_slist_foreach(filelist, (GFunc)add_one_file, NULL);
 		g_slist_free(filelist);
@@ -397,8 +408,18 @@ static void add_dir_cb(GtkMenuItem *menuitem, gpointer ptr)
 		GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
 		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
 		NULL);
+	const char *path = get_setting("file_chooser_path");
+	if (path) {
+		gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dialog),
+						    path);
+	}
 
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+		char *path = gtk_file_chooser_get_current_folder(GTK_FILE_CHOOSER(dialog));
+		if (path) {
+			set_setting("file_chooser_path", path);
+			free(path);
+		}
 		char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
 		add_dir_or_file_playlist(page->playlist, filename);
 		g_free(filename);
@@ -490,7 +511,6 @@ static void enqueue_one_file(GtkTreeModel *model, GtkTreePath *path,
 static void enqueue_cb(GtkButton *button, gpointer ptr)
 {
 	struct playlist_page *page = page_playlist();
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	UNUSED(button);
 	UNUSED(ptr);
@@ -517,7 +537,6 @@ static void remove_one_file(GtkTreeRowReference *rowref, gpointer ptr)
 static void remove_cb(GtkButton *button, gpointer ptr)
 {
 	struct playlist_page *page = page_playlist();
-	struct playlist_ui_ctx *ctx = get_playlist_ui_ctx(page->playlist);
 
 	UNUSED(button);
 	UNUSED(ptr);
@@ -820,6 +839,10 @@ int main(int argc, char **argv)
 	if (queuepath)
 		load_playlist(japlay_queue, queuepath);
 
+	char *settingspath = get_config_name("settings.cfg");
+	if (settingspath)
+		load_settings(settingspath);
+
 	for (i = 1; i < argc; ++i)
 		add_file_playlist(main_playlist, argv[i]);
 
@@ -840,6 +863,8 @@ int main(int argc, char **argv)
 		save_playlist_m3u(main_playlist, playlistpath);
 	if (queuepath)
 		save_playlist_m3u(japlay_queue, queuepath);
+	if (settingspath)
+		save_settings(settingspath);
 
 	japlay_exit();
 

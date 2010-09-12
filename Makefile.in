@@ -6,7 +6,7 @@ LDFLAGS = `pkg-config ao glib-2.0 gthread-2.0 --libs` -lpthread
 PLUGIN_CFLAGS = $(CFLAGS) -fPIC
 PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 
-OBJ = main.o utils.o playlist.o unixsocket.o buffer.o hashmap.o
+OBJ = main.o utils.o playlist.o unixsocket.o buffer.o hashmap.o settings.o
 PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o
 GTK_BINARY = japlay
 PLUGINS = in_mad.so in_mikmod.so in_vorbis.so pl_m3u.so pl_pls.so
@@ -62,15 +62,17 @@ pl_m3u.so:	pl_m3u.o
 pl_pls.so:	pl_pls.o
 	$(CC) pl_pls.o -o $@ $(PLUGIN_LDFLAGS)
 
-buffer.o:       buffer.c common.h buffer.h plugin.h
-in_mad.o:       in_mad.c common.h playlist.h plugin.h utils.h
-in_mikmod.o:    in_mikmod.c plugin.h utils.h playlist.h common.h
-in_vorbis.o:    in_vorbis.c plugin.h utils.h playlist.h common.h
-main.o: main.c buffer.h config.h list.h ui.h playlist.h utils.h common.h japlay.h plugin.h
-playlist.o:     playlist.c utils.h list.h ui.h japlay.h common.h playlist.h hashmap.h
-pl_m3u.o:       pl_m3u.c plugin.h utils.h playlist.h japlay.h common.h
-pl_pls.o:       pl_pls.c plugin.h utils.h playlist.h japlay.h common.h
-ui_gtk.o:       ui_gtk.c utils.h playlist.h japlay.h common.h ui.h unixsocket.h
-unixsocket.o:   unixsocket.c unixsocket.h common.h
-utils.o:        utils.c utils.h
+buffer.o: buffer.c buffer.h plugin.h common.h
+hashmap.o: hashmap.c hashmap.h
+in_mad.o: in_mad.c plugin.h playlist.h common.h utils.h
+in_mikmod.o: in_mikmod.c common.h playlist.h utils.h plugin.h
+in_vorbis.o: in_vorbis.c common.h playlist.h utils.h plugin.h
+main.o: main.c japlay.h common.h utils.h playlist.h plugin.h ui.h list.h config.h buffer.h settings.h
+playlist.o: playlist.c playlist.h common.h japlay.h ui.h list.h utils.h hashmap.h
+pl_m3u.o: pl_m3u.c common.h japlay.h playlist.h utils.h plugin.h
+pl_pls.o: pl_pls.c common.h japlay.h playlist.h utils.h plugin.h
+settings.o: settings.c settings.h common.h list.h utils.h
+ui_gtk.o: ui_gtk.c ui.h common.h japlay.h playlist.h utils.h unixsocket.h settings.h
+unixsocket.o: unixsocket.c common.h unixsocket.h
+utils.o: utils.c utils.h common.h
 

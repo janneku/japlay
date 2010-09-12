@@ -11,6 +11,7 @@
 #include "list.h"
 #include "config.h"
 #include "buffer.h"
+#include "settings.h"
 
 #include <unistd.h>
 #include <ctype.h>
@@ -696,6 +697,8 @@ int japlay_init(int *argc, char **argv)
 		error("Can not create config dir: %s (%s)\n", configdir, strerror(errno));
 		return -1;
 	}
+
+	init_settings();
 
 	ao_initialize();
 	load_plugins();
