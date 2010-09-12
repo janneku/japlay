@@ -154,6 +154,12 @@ ssize_t xread(int fd, void *buf, size_t maxlen)
 	}
 }
 
+bool file_exists(const char *path)
+{
+	struct stat st;
+	return stat(path, &st) == 0;
+}
+
 int setblocking(int fd, bool blocking)
 {
 	int flags = fcntl(fd, F_GETFL);

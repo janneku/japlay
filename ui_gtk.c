@@ -704,18 +704,23 @@ gboolean expose_event_cb(GtkWidget *widget, GdkEventExpose *event, gpointer ptr)
 
 int main(int argc, char **argv)
 {
-	int fd = unix_socket_connect(SOCKET_NAME);
-	if (fd >= 0) {
-		int i;
-		for (i = 1; i < argc; ++i) {
-			char *path = absolute_path(argv[i]);
-			if (path) {
-				sendto(fd, path, strlen(path), 0, NULL, 0);
-				free(path);
+	/* check if japlay is already running */
+	if (file_exists(SOCKET_NAME)) {
+		int fd = unix_socket_connect(SOCKET_NAME);
+		if (fd >= 0) {
+			int i;
+			for (i = 1; i < argc; ++i) {
+				char *path = absolute_path(argv[i]);
+				if (path) {
+					sendto(fd, path, strlen(path), 0, NULL, 0);
+					free(path);
+				}
 			}
+			close(fd);
+			return 0;
 		}
-		close(fd);
-		return 0;
+		/* remove leftover socket */
+		unlink(SOCKET_NAME);
 	}
 
 	g_thread_init(NULL);
@@ -848,7 +853,7 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, handle_sigint);
 
-	fd = unix_socket_create(SOCKET_NAME);
+	int fd = unix_socket_create(SOCKET_NAME);
 	if (fd >= 0) {
 		GIOChannel *io = g_io_channel_unix_new(fd);
 		g_io_add_watch(io, G_IO_IN, incoming_client, NULL);
