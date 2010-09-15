@@ -34,17 +34,48 @@ if test -z "$CC" ; then
     CC=gcc
 fi
 
+function detectpkg {
+	lib="$1"
+	echo -n "Checking for $lib: "
+	if pkg-config "$lib" 2>/dev/null; then
+		echo "found"
+		return 0
+	fi
+	echo "not found"
+	return 1
+}
+
+function detectbin {
+	lib="$1"
+	echo -n "Checking for $lib: "
+	location=$(which "$lib" 2>/dev/null)
+	if test -n "$location"; then
+		echo "found in $location"
+		return 0
+	fi
+	echo "not found"
+	return 1
+}
+
+plugins=""
+
+detectpkg "mad" && plugins="$plugins in_mad.so"
+detectpkg "vorbisfile" && plugins="$plugins in_vorbis.so"
+detectbin "libmikmod-config" && plugins="$plugins in_mikmod.so"
+
 for sname in Makefile.in config.h.in ; do
     dname="$(basename "$sname" ".in")"
     sed -e "s|{PREFIX}|$prefix|g" \
 	-e "s|{LIBPATH}|$libpath|g" \
 	-e "s|{CC}|$CC|g" \
+	-e "s|{PLUGINS}|$plugins|g" \
 	< "$sname" > "$dname"
 done
 
 echo
 echo "Install path:    $prefix/bin"
 echo "Library path:    $libpath"
+echo "Enabled plugins: $plugins"
 echo "Compiler:        $CC"
 echo
 echo "Configure successful"

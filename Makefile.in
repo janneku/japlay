@@ -9,7 +9,7 @@ PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 OBJ = main.o utils.o playlist.o unixsocket.o buffer.o hashmap.o settings.o
 PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o
 GTK_BINARY = japlay
-PLUGINS = in_mad.so in_mikmod.so in_vorbis.so pl_m3u.so pl_pls.so
+PLUGINS = {PLUGINS} pl_m3u.so pl_pls.so
 
 all: $(GTK_BINARY) $(PLUGINS)
 
