@@ -388,6 +388,10 @@ static void *play_thread_routine(void *arg)
 			dev = ao_open_live(ao_default_driver_id(), &format, NULL);
 			if (dev == NULL) {
 				ui_show_message("Unable to open audio device");
+				/* remove from the buffer */
+				PLAY_LOCK;
+				buffer_processed(&play_buffer, avail);
+				PLAY_UNLOCK;
 				playing = false;
 				continue;
 			}
@@ -444,7 +448,8 @@ static void *play_thread_routine(void *arg)
 			power = 0;
 		}
 
-		ao_play(dev, (char *)buffer, avail * 2);
+		if (avail)
+			ao_play(dev, (char *)buffer, avail * 2);
 
 		/* we are done with the audio data */
 		PLAY_LOCK;
