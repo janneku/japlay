@@ -716,10 +716,9 @@ int japlay_init(int *argc, char **argv)
 
 	init_playlist();
 
-	init_buffer(&ds.buffer);
-
 	memset(&ds, 0, sizeof(ds));
 	ds.toseek = -1;
+	init_buffer(&ds.buffer);
 
 	pthread_mutex_init(&cursor_mutex, NULL);
 
