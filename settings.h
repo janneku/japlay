@@ -2,6 +2,7 @@
 #define _SETTINGS_H_
 
 const char *get_setting(const char *name);
+int get_setting_int(const char *name, int defval);
 int set_setting(const char *name, const char *val);
 int load_settings(const char *filename);
 int save_settings(const char *filename);

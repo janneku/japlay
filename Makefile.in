@@ -64,7 +64,7 @@ pl_pls.so:	pl_pls.o
 
 buffer.o: buffer.c buffer.h plugin.h common.h
 hashmap.o: hashmap.c hashmap.h
-in_mad.o: in_mad.c plugin.h playlist.h common.h utils.h
+in_mad.o: in_mad.c plugin.h playlist.h common.h utils.h settings.h
 in_mikmod.o: in_mikmod.c common.h playlist.h utils.h plugin.h
 in_vorbis.o: in_vorbis.c common.h playlist.h utils.h plugin.h
 main.o: main.c japlay.h common.h utils.h playlist.h plugin.h ui.h list.h config.h buffer.h settings.h

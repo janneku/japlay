@@ -8,6 +8,7 @@
 #include "playlist.h"
 #include "common.h"
 #include "utils.h"
+#include "settings.h"
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -22,8 +23,6 @@
 #include <assert.h>
 #include <mad.h>
 
-/*#define ACCURATE_SEEK*/
-
 struct input_plugin_ctx {
 	struct input_state *state;
 	struct mad_stream stream;
@@ -34,6 +33,7 @@ struct input_plugin_ctx {
 	size_t fpos, length;
 	bool reliable;
 	bool streaming;
+	bool accurate_seek;
 
 	/* seeking */
 	size_t *seconds;
@@ -360,6 +360,10 @@ static int mad_open(struct input_plugin_ctx *ctx, struct input_state *state,
 {
 	/* ctx is zeroed by the caller */
 
+	ctx->accurate_seek = get_setting_int("mad_accurate_seek", 0);
+	if (ctx->accurate_seek)
+		info("using accurate seek\n");
+
 	ctx->state = state;
 	ctx->length = (size_t) -1;
 
@@ -542,9 +546,8 @@ static size_t mad_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 	}
 }
 
-static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
+static int accurate_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 {
-#ifdef ACCURATE_SEEK
 	unsigned int cur_pos = japlay_get_position(ctx->state);
 
 	if (newpos->msecs < cur_pos) {
@@ -601,7 +604,11 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 		pos_cnt -= adv * samplerate / 1000;
 	}
 	newpos->msecs = cur_pos;
-#else
+	return 1;
+}
+
+static int fast_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
+{
 	size_t offs = 0;
 	unsigned int t = newpos->msecs / 1000;
 
@@ -637,9 +644,14 @@ static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
 	mad_synth_mute(&ctx->synth);
 	mad_stream_finish(&ctx->stream);
 	mad_stream_init(&ctx->stream);
-#endif
-
 	return 1;
+}
+
+static int mad_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
+{
+	if (ctx->accurate_seek)
+		return accurate_seek(ctx, newpos);
+	return fast_seek(ctx, newpos);
 }
 
 static const char *mime_types[] = {

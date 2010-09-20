@@ -40,6 +40,20 @@ const char *get_setting(const char *name)
 	return entry->val;
 }
 
+int get_setting_int(const char *name, int defval)
+{
+	const char *val = get_setting(name);
+	if (val == NULL)
+		return defval;
+	char *endptr;
+	int number = strtol(val, &endptr, 0);
+	if (endptr == val) {
+		warning("invalid number: %s\n", val);
+		return defval;
+	}
+	return number;
+}
+
 int set_setting(const char *name, const char *val)
 {
 	struct settings_entry *entry = find_setting(name);
