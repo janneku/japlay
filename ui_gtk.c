@@ -20,8 +20,6 @@
 #include <sys/socket.h>
 #include <errno.h>
 
-#define SOCKET_NAME		"/tmp/japlay"
-
 enum {
 	COL_ENTRY,
 	COL_NAME,
@@ -704,9 +702,11 @@ gboolean expose_event_cb(GtkWidget *widget, GdkEventExpose *event, gpointer ptr)
 
 int main(int argc, char **argv)
 {
+	char *socketname = get_config_name("control");
+
 	/* check if japlay is already running */
-	if (file_exists(SOCKET_NAME)) {
-		int fd = unix_socket_connect(SOCKET_NAME);
+	if (socketname && file_exists(socketname)) {
+		int fd = unix_socket_connect(socketname);
 		if (fd >= 0) {
 			int i;
 			for (i = 1; i < argc; ++i) {
@@ -720,7 +720,7 @@ int main(int argc, char **argv)
 			return 0;
 		}
 		/* remove leftover socket */
-		unlink(SOCKET_NAME);
+		unlink(socketname);
 	}
 
 	g_thread_init(NULL);
@@ -853,16 +853,19 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, handle_sigint);
 
-	int fd = unix_socket_create(SOCKET_NAME);
-	if (fd >= 0) {
-		GIOChannel *io = g_io_channel_unix_new(fd);
-		g_io_add_watch(io, G_IO_IN, incoming_client, NULL);
+	int fd = -1;
+	if (socketname) {
+		fd = unix_socket_create(socketname);
+		if (fd >= 0) {
+			GIOChannel *io = g_io_channel_unix_new(fd);
+			g_io_add_watch(io, G_IO_IN, incoming_client, NULL);
+		}
 	}
 
 	gtk_main();
 
 	if (fd >= 0)
-		unlink(SOCKET_NAME);
+		unlink(socketname);
 
 	if (playlistpath)
 		save_playlist_m3u(main_playlist, playlistpath);

@@ -22,8 +22,6 @@
 #include <sys/stat.h>
 #include <pthread.h>
 
-#define SOCKET_NAME		"/tmp/japlay"
-
 #define REFRESH_RATE	16   /* how often to run the playback loop */
 
 #define TARGET_POWER	64   /* target power for auto adjustment */
