@@ -172,11 +172,16 @@ static int add_playlist_page(struct playlist *playlist, const char *title)
 		GTK_SELECTION_MULTIPLE);
 	g_signal_connect(G_OBJECT(page->view), "row-activated", G_CALLBACK(playlist_clicked), NULL);
 
+	/* song name column */
 	GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(page->view),
-		-1, "Name", renderer, "text", COL_NAME,
+	g_object_set(G_OBJECT(renderer), "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+	GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes(
+		"Name", renderer, "text", COL_NAME,
 		"foreground", COL_COLOR, NULL);
+	gtk_tree_view_column_set_expand(column, true);
+	gtk_tree_view_insert_column(GTK_TREE_VIEW(page->view), column, -1);
 
+	/* song length column */
 	renderer = gtk_cell_renderer_text_new();
 	gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(page->view),
 		-1, "Length", renderer, "text", COL_LENGTH,
@@ -827,7 +832,6 @@ int main(int argc, char **argv)
 	gtk_box_pack_start(GTK_BOX(vbox), notebook, true, true, 0);
 
 	gtk_container_add(GTK_CONTAINER(main_window), vbox);
-	gtk_widget_set_size_request(vbox, 350, 400);
 	gtk_widget_show_all(main_window);
 
 	/* TODO: load all playlists */
