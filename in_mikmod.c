@@ -195,8 +195,10 @@ static int mikmod_open(struct input_plugin_ctx *ctx, struct input_state *state,
 
 static void mikmod_close(struct input_plugin_ctx *ctx)
 {
-	Player_Stop();
-	Player_Free(ctx->mf);
+	if (ctx->mf) {
+		Player_Stop();
+		Player_Free(ctx->mf);
+	}
 	close(ctx->fd);
 }
 
@@ -218,6 +220,27 @@ static size_t mikmod_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
 		/ sizeof(sample_t);
 }
 
+static int mikmod_seek(struct input_plugin_ctx *ctx, struct songpos *newpos)
+{
+	if (newpos->msecs != 0)
+		return 0;
+
+	Player_Stop();
+	Player_Free(ctx->mf);
+
+	lseek(ctx->fd, 0, SEEK_SET);
+
+	ctx->mf = Player_LoadGeneric(&ctx->mr, 128, true);
+	if (ctx->mf == NULL) {
+		warning("MikMod error: %s\n", MikMod_strerror(MikMod_errno));
+		return -1;
+	}
+
+	Player_Start(ctx->mf);
+
+	return 1;
+}
+
 static const char *mime_types[] = {
 	"audio/x-mod",
 	"audio/x-s3m",
@@ -233,6 +256,7 @@ static struct input_plugin plugin_info = {
 	.open = mikmod_open,
 	.close = mikmod_close,
 	.fillbuf = mikmod_fillbuf,
+	.seek = mikmod_seek,
 	.mime_types = mime_types,
 };
 
