@@ -221,6 +221,8 @@ static void *decode_thread_routine(void *arg)
 			if (ds.song) {
 				finish_input(&ds);
 				ds.song = NULL;
+				ds.position = 0;
+				ds.pos_cnt = 0;
 			}
 		}
 
@@ -271,6 +273,8 @@ static void *decode_thread_routine(void *arg)
 				playing = false;
 				continue;
 			}
+			ds.toseek = 0;
+			mark_buffer_event(&ds.buffer);
 			put_song(song);
 		}
 		else
