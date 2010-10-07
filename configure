@@ -57,7 +57,37 @@ function detectbin {
 	return 1
 }
 
+function detectuade {
+	lib=libuade
+	cflags=""
+	ldflags=""
+	echo -n "Checking for $lib: "
+	if pkg-config "$lib" 2>/dev/null; then
+		echo "found"
+		uadecflags=$(pkg-config --cflags "$lib")
+		uadeldflags=$(pkg-config --libs "$lib")
+		return 0
+	fi
+
+	if PKG_CONFIG_PATH=$HOME/lib/pkgconfig pkg-config "$lib" 2>/dev/null; then
+		echo "found"
+		uadecflags=$(PKG_CONFIG_PATH=$HOME/lib/pkgconfig pkg-config --cflags "$lib")
+		uadeldflags=$(PKG_CONFIG_PATH=$HOME/lib/pkgconfig pkg-config --libs "$lib")
+		return 0
+	fi
+
+	echo "not found"
+	return 1
+}
+
 plugins=""
+
+uadecflags=""
+uadeldflags=""
+detectuade
+if test -n "$uadeldflags" ; then
+	plugins="$plugins in_uade.so"
+fi
 
 detectpkg "mad" && plugins="$plugins in_mad.so"
 detectpkg "vorbisfile" && plugins="$plugins in_vorbis.so"
@@ -69,6 +99,8 @@ for sname in Makefile.in config.h.in ; do
 	-e "s|{LIBPATH}|$libpath|g" \
 	-e "s|{CC}|$CC|g" \
 	-e "s|{PLUGINS}|$plugins|g" \
+	-e "s|{UADE_CFLAGS}|$uadecflags|g" \
+	-e "s|{UADE_LDFLAGS}|$uadeldflags|g" \
 	< "$sname" > "$dname"
 done
 

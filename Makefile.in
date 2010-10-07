@@ -11,6 +11,9 @@ PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o
 GTK_BINARY = japlay
 PLUGINS = {PLUGINS} pl_m3u.so pl_pls.so
 
+UADE_CFLAGS = -O2 -W -Wall `pkg-config ao glib-2.0 --cflags` -g -pthread -fPIC {UADE_CFLAGS}
+UADE_LDFLAGS = {UADE_LDFLAGS}
+
 all: $(GTK_BINARY) $(PLUGINS)
 
 main.o:	main.c config.h
@@ -20,6 +23,9 @@ in_mad.o:	in_mad.c
 
 in_mikmod.o:	in_mikmod.c
 	$(CC) $(PLUGIN_CFLAGS) `libmikmod-config --cflags` -c $<
+
+in_uade.o:	in_uade.c
+	$(CC) $(UADE_CFLAGS) -c $<
 
 in_vorbis.o:	in_vorbis.c
 	$(CC) $(PLUGIN_CFLAGS) `pkg-config vorbisfile --cflags` -c $<
@@ -52,6 +58,9 @@ in_mad.so:	in_mad.o
 
 in_mikmod.so:	in_mikmod.o
 	$(CC) in_mikmod.o -o $@ $(PLUGIN_LDFLAGS) `libmikmod-config --libs`
+
+in_uade.so:	in_uade.o
+	$(CC) in_uade.o -o $@ $(PLUGIN_LDFLAGS) $(UADE_LDFLAGS)
 
 in_vorbis.so:	in_vorbis.o
 	$(CC) in_vorbis.o -o $@ $(PLUGIN_LDFLAGS) `pkg-config vorbisfile --libs`
