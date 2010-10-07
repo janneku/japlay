@@ -42,7 +42,7 @@ static int uade_open(struct input_plugin_ctx *ctx, struct input_state *state,
 	init_uade(ctx);
 
 	if (uade_play(filename, -1, ctx->play)) {
-		warning("uade: unable to open file (%s)\n", strerror(errno));
+		warning("uade: unable to open file %s\n", filename);
 		return -1;
 	}
 	return 0;
