@@ -16,60 +16,61 @@
 static int hashmap_grow(struct hashmap *map)
 {
 	size_t i;
-	struct hash_node **newtable = calloc(map->len * 2,
-					     sizeof(struct hash_node *));
+
+	/* first, allocate more room for the table */
+	struct hash_node **newtable = realloc(map->table, map->len * 2 *
+					      sizeof(struct hash_node *));
 	if (newtable == NULL)
 		return -1;
+	map->table = newtable;
 
+	/* then, split all nodes from the lower half of the table
+	   to either lower or upper half of the table */
 	for (i = 0; i < map->len; ++i) {
 		struct hash_node *node = map->table[i], *next;
 		struct hash_node *a = NULL, *b = NULL;
 		while (node) {
 			next = node->next;
 			if (node->hash & map->len) {
+				/* upper half */
 				node->next = b;
 				b = node;
 			} else {
+				/* lower half */
 				node->next = a;
 				a = node;
 			}
 			node = next;
 		}
-		newtable[i] = a;
-		newtable[i + map->len] = b;
+		map->table[i] = a;
+		map->table[i + map->len] = b;
 	}
-
-	free(map->table);
 	map->len *= 2;
-	map->table = newtable;
 	return 0;
 }
 
 static int hashmap_shrink(struct hashmap *map)
 {
 	size_t i;
-	struct hash_node **newtable = calloc(map->len / 2,
-					     sizeof(struct hash_node *));
+
+	/* first, fold the upper half of the table to top of the lower half */
+	map->len /= 2;
+	for (i = 0; i < map->len; ++i) {
+		struct hash_node *prev = map->table[i];
+		struct hash_node *next = map->table[i + map->len];
+		if (prev == NULL)
+			map->table[i] = next;
+		else {
+			while (prev->next)
+				prev = prev->next;
+			prev->next = next;
+		}
+	}
+	/* then, release unneeded memory */
+	struct hash_node **newtable = realloc(map->table, map->len *
+					      sizeof(struct hash_node *));
 	if (newtable == NULL)
 		return -1;
-
-	for (i = 0; i < map->len / 2; ++i) {
-		struct hash_node *node = map->table[i];
-		struct hash_node *prev = NULL;
-		newtable[i] = node;
-		while (node) {
-			prev = node;
-			node = node->next;
-		}
-		node = map->table[i + map->len / 2];
-		if (prev != NULL)
-			prev->next = node;
-		else
-			newtable[i] = node;
-	}
-
-	free(map->table);
-	map->len /= 2;
 	map->table = newtable;
 	return 0;
 }
