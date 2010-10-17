@@ -19,6 +19,8 @@ int add_dir_or_file_playlist(struct playlist *playlist, const char *path);
 
 int load_playlist(struct playlist *playlist, const char *filename);
 
+void start_playlist_scan(void);
+
 void japlay_play(void);
 void japlay_set_autovol(bool enabled);
 void japlay_seek_relative(long msecs);
