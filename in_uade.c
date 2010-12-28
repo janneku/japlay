@@ -19,29 +19,52 @@ struct input_plugin_ctx {
 	struct uade_state *play;
 };
 
-static void init_uade(struct input_plugin_ctx *ctx)
+static int init_uade(struct input_plugin_ctx *ctx)
 {
+	int ret = 0;
+
 	/* Fix me: racy initialization */
-	if (scanstate == NULL)
+	if (scanstate == NULL) {
 		scanstate = uade_new_state(NULL, NULL);
-	if (ctx != NULL && ctx->play == NULL)
+		if (scanstate == NULL) {
+			warning("uade: can not initialize scanstate\n");
+			ret = -1;
+		}
+	}
+
+	if (ctx != NULL && ctx->play == NULL) {
 		ctx->play = uade_new_state(NULL, NULL);
+		if (ctx->play == NULL)
+			ret = -1;
+	}
+
+	return ret;
 }
 
 static bool uade_detect(const char *filename)
 {
-	init_uade(NULL);
+	if (init_uade(NULL))
+		return 0;
 	return uade_is_our_file(filename, scanstate);
 }
 
 static int uade_open(struct input_plugin_ctx *ctx, struct input_state *state,
 		     const char *filename)
 {
+	int ret;
+
 	UNUSED(state);
 
-	init_uade(ctx);
+	if (init_uade(ctx))
+		return -1;
 
-	if (uade_play(filename, -1, ctx->play)) {
+	ret = uade_play(filename, -1, ctx->play);
+	if (ret < 0) {
+		warning("uade: protocol error while playing %s\n", filename);
+		uade_cleanup_state(ctx->play);
+		ctx->play = NULL;
+		return -1;
+	} else if (ret == 0) {
 		warning("uade: unable to open file %s\n", filename);
 		return -1;
 	}
@@ -55,9 +78,7 @@ static void uade_close(struct input_plugin_ctx *ctx)
 
 static const char *get_fname(struct uade_state *state)
 {
-	struct uade_song_info info;
-	uade_get_song_info(&info, state);
-	return info.fname;
+	return uade_get_song_info(state)->modulefname;
 }
 
 static size_t uade_fillbuf(struct input_plugin_ctx *ctx, sample_t *buffer,
