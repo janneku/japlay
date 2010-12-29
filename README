@@ -1,0 +1,21 @@
+japlay - Just Another player
+Copyright 2010 Janne Kulmala <janne.t.kulmala@iki.fi>
+
+Program code is licensed with GNU LGPL 2.1. See COPYING.LGPL file.
+hashmap.c is licensed inpendently. See LICENSE.hashmap.
+
+Available audio decoders:
+ * libmad MPEG-1/MPEG-2 (in_mad.so)
+   - HTTP streaming
+ * Ogg Vorbis (in_vorbis.so)
+ * MikMod module player (in_mikmod.so)
+ * uade (in_uade.so)
+
+Supported playlist formats:
+ * m3u (in_m3u.so)
+ * pls (in_pls.so)
+
+Available user interfaces:
+ * GTK+2 (binary: japlay)
+
+See INSTALL for installation instructions.
