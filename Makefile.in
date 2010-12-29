@@ -7,7 +7,7 @@ PLUGIN_CFLAGS = $(CFLAGS) -fPIC
 PLUGIN_LDFLAGS = $(LDCFLAGS) -shared
 
 OBJ = main.o utils.o playlist.o unixsocket.o buffer.o hashmap.o settings.o
-PLUGIN_OBJS = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o
+PLUGIN_OBJ = in_mad.o in_mikmod.o in_vorbis.o ui_gtk.o in_uade.o
 GTK_BINARY = japlay
 PLUGINS = {PLUGINS} pl_m3u.so pl_pls.so
 
@@ -51,7 +51,7 @@ install:	$(GTK_BINARY) $(PLUGINS)
 	install -m 755 $(PLUGINS) $(DESTDIR)$(LIBPATH)/japlay
 
 clean:
-	rm -f $(OBJ) $(PLUGIN_OBJS) $(GTK_BINARY) $(PLUGINS)
+	rm -f $(OBJ) $(PLUGIN_OBJ) $(GTK_BINARY) $(PLUGINS)
 
 in_mad.so:	in_mad.o
 	$(CC) in_mad.o -o $@ $(PLUGIN_LDFLAGS) `pkg-config mad --libs`
@@ -71,17 +71,7 @@ pl_m3u.so:	pl_m3u.o
 pl_pls.so:	pl_pls.o
 	$(CC) pl_pls.o -o $@ $(PLUGIN_LDFLAGS)
 
-buffer.o: buffer.c buffer.h plugin.h common.h
-hashmap.o: hashmap.c hashmap.h
-in_mad.o: in_mad.c plugin.h playlist.h common.h utils.h settings.h
-in_mikmod.o: in_mikmod.c common.h playlist.h utils.h plugin.h
-in_vorbis.o: in_vorbis.c common.h playlist.h utils.h plugin.h
-main.o: main.c japlay.h common.h utils.h playlist.h plugin.h ui.h list.h config.h buffer.h settings.h
-playlist.o: playlist.c playlist.h common.h japlay.h ui.h list.h utils.h hashmap.h
-pl_m3u.o: pl_m3u.c common.h japlay.h playlist.h utils.h plugin.h
-pl_pls.o: pl_pls.c common.h japlay.h playlist.h utils.h plugin.h
-settings.o: settings.c settings.h common.h list.h utils.h
-ui_gtk.o: ui_gtk.c ui.h common.h japlay.h playlist.h utils.h unixsocket.h settings.h
-unixsocket.o: unixsocket.c common.h unixsocket.h
-utils.o: utils.c utils.h common.h
+depends:
+	@$(CC) -MM $(patsubst %.o,%.c,$(OBJ) $(PLUGIN_OBJ))
 
+# Dependencies are appended here:

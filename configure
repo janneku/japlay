@@ -104,6 +104,8 @@ for sname in Makefile.in config.h.in ; do
 	< "$sname" > "$dname"
 done
 
+make depends >>Makefile
+
 echo
 echo "Install path:    $prefix/bin"
 echo "Library path:    $libpath"
